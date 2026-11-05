@@ -8,17 +8,29 @@ import {
 // Values
 pub fn append_raw(Bytes, Bytes, Bytes, Bytes) -> Bytes raise TokenError
 
+pub fn attenuate(Bytes, Bytes, Array[Check], Int32, Bytes) -> Bytes raise TokenError
+
 pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
+
+pub fn authorize_token(Bytes, Bytes, Array[Fact], Array[Rule], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
 
 pub fn derive_facts(Array[Fact], Array[Rule], Int32, Int32) -> Array[Fact] raise AuthorizationError
 
+pub fn encode_block(Array[Fact], Array[Rule], Array[Check], Int32) -> Bytes raise TokenError
+
 pub fn evaluate_policy_set(Array[Fact], Array[Check], Array[Policy]) -> Unit raise AuthorizationError
+
+pub fn issue(Array[Fact], Array[Rule], Array[Check], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn match_query(Predicate, Array[Fact]) -> Array[Map[String, Value]]
 
+pub fn parse_check_body(String, CheckMode) -> Check raise TokenError
+
 pub fn parse_fact(String) -> Fact raise TokenError
+
+pub fn parse_policy_body(String, PolicyKind) -> Policy raise TokenError
 
 pub fn parse_query(String) -> Predicate raise TokenError
 
@@ -26,12 +38,23 @@ pub fn parse_query_body(String) -> Query raise TokenError
 
 pub fn parse_rule(String) -> Rule raise TokenError
 
+pub fn token_from_base64url(String) -> Bytes raise TokenError
+
+pub fn token_to_base64url(Bytes) -> String
+
 pub fn verify_authority_facts(Bytes, Bytes) -> Array[Fact] raise TokenError
+
+pub fn verify_block_facts(Bytes, Bytes) -> Array[VerifiedBlockFacts] raise TokenError
+
+pub fn verify_block_programs(Bytes, Bytes) -> Array[VerifiedBlockProgram] raise TokenError
 
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
 
 // Errors
 pub suberror AuthorizationError {
+  InvalidToken(String)
+  UnsupportedTokenFeature(String)
+  TokenSignatureInvalid
   FailedCheck(Int32)
   NoMatchingPolicy
   Denied(Int32)
@@ -56,6 +79,7 @@ pub(all) struct Check {
 pub(all) enum CheckMode {
   Any
   All
+  Reject
 }
 
 pub(all) enum CompareOperator {
@@ -86,6 +110,14 @@ pub(all) struct Fact {
 } derive(Eq)
 pub fn Fact::equal(Self, Self) -> Bool
 pub fn Fact::not_equal(Self, Self) -> Bool
+
+pub(all) enum MapKey {
+  IntegerKey(Int64)
+  StringKey(String)
+} derive(Eq, @debug.Debug)
+pub fn MapKey::equal(Self, Self) -> Bool
+pub fn MapKey::not_equal(Self, Self) -> Bool
+pub fn MapKey::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Policy {
   kind : PolicyKind
@@ -118,6 +150,7 @@ pub fn QueryTerm::to_repr(Self) -> @debug.Repr
 pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
+  conditions : Array[Condition]
 }
 
 pub(all) enum Value {
@@ -127,6 +160,7 @@ pub(all) enum Value {
   ByteString(Bytes)
   ArrayValue(Array[Value])
   SetValue(Array[Value])
+  MapValue(Array[(MapKey, Value)])
   Boolean(Bool)
   Null
 } derive(@debug.Debug)
@@ -134,6 +168,23 @@ pub fn Value::equal(Self, Self) -> Bool
 pub fn Value::not_equal(Self, Self) -> Bool
 pub fn Value::to_repr(Self) -> @debug.Repr
 pub impl Eq for Value
+
+pub(all) struct VerifiedBlockFacts {
+  index : Int32
+  signature : Bytes
+  facts : Array[Fact]
+}
+
+pub(all) struct VerifiedBlockProgram {
+  index : Int32
+  datalog_version : Int32
+  signature : Bytes
+  facts : Array[Fact]
+  rules : Array[Rule]
+  checks : Array[Check]
+  has_scopes : Bool
+  has_unsupported_expressions : Bool
+}
 
 // Type aliases
 

@@ -9,6 +9,15 @@ from biscuit_auth import Biscuit, PublicKey
 
 encoded = subprocess.check_output(["moon", "run", "examples/issue"], text=True).strip()
 root = PublicKey("ed25519/d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
-token = Biscuit.from_bytes(base64.b64decode(encoded), root)
+padding = "=" * (-len(encoded) % 4)
+token = Biscuit.from_bytes(base64.urlsafe_b64decode(encoded + padding), root)
 assert token.block_count() == 2
-print("biscuit-python accepted the two-block MoonBit token")
+authority = token.block_source(0)
+attenuation = token.block_source(1)
+print("Authority block decoded by biscuit-python:")
+print(authority)
+print("Attenuation block decoded by biscuit-python:")
+print(attenuation)
+assert "eligible" in authority and "item" in authority
+assert "eligible" in attenuation and "check" in attenuation
+print("biscuit-python parsed the structured rule, comparison and check")

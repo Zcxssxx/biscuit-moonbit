@@ -45,6 +45,27 @@ test "authority fact inspection still verifies signatures first" {
 }
 
 ///|
+test "verified facts retain block boundaries and shared symbols" {
+  let appended_block = b"\x18\x03\x22\x0d\x0a\x0b\x08\x04\x12\x03\x18\x80\x08\x12\x02\x18\x00"
+  let token = @biscuit.append_raw(
+    test001_basic,
+    root_key,
+    appended_block,
+    Bytes::make(32, b'\x43'),
+  )
+  let blocks = @biscuit.verify_block_facts(token, root_key)
+  assert_eq(blocks.length(), 3)
+  assert_eq(blocks[0].index, 0)
+  assert_eq(blocks[0].facts.length(), 3)
+  assert_eq(blocks[1].index, 1)
+  assert_eq(blocks[2].index, 2)
+  assert_eq(blocks[2].facts.length(), 1)
+  let query = @biscuit.parse_query("right(\"file1\", \"read\")")
+  assert_eq(@biscuit.match_query(query, blocks[2].facts).length(), 1)
+  assert_eq(@biscuit.verify_authority_facts(token, root_key).length(), 3)
+}
+
+///|
 test "upstream sealed token signature chain" {
   @biscuit.verify_signatures(test020_sealed, root_key)
 }
@@ -83,6 +104,33 @@ let test036_secp256r1 : Bytes = b"\x12\xaa\x01\x0a\x3d\x0a\x05\x66\x69\x6c\x65\x
 ///|
 test "upstream v1 signature is accepted" {
   @biscuit.verify_signatures(test029_reject_if, root_key)
+}
+
+///|
+test "version 6 reject check is decoded without running expressions" {
+  let programs = @biscuit.verify_block_programs(test029_reject_if, root_key)
+  assert_eq(programs.length(), 1)
+  assert_eq(programs[0].checks.length(), 1)
+  assert_true(
+    match programs[0].checks[0].mode {
+      @biscuit.Reject => true
+      _ => false
+    },
+  )
+  assert_true(programs[0].has_unsupported_expressions)
+  assert_false(programs[0].has_scopes)
+}
+
+///|
+test "token authorization rejects checks with expression bytecode" {
+  let rejected = try {
+    @biscuit.authorize_token(test029_reject_if, root_key, [], [], [], 100, 20)
+    false
+  } catch {
+    @biscuit.UnsupportedTokenFeature(_) => true
+    _ => false
+  }
+  assert_true(rejected)
 }
 
 ///|

@@ -1,5 +1,17 @@
 ///|
-/// Scalar values supported by the initial Datalog evaluator subset.
+pub(all) enum MapKey {
+  IntegerKey(Int64)
+  StringKey(String)
+} derive(Eq, @debug.Debug)
+
+///|
+pub extend MapKey with Eq::{equal, not_equal}
+
+///|
+pub extend MapKey with @debug.Debug::{to_repr}
+
+///|
+/// Constants supported by the Datalog parser and evaluator subset.
 pub(all) enum Value {
   Text(String)
   Number(Int64)
@@ -7,6 +19,7 @@ pub(all) enum Value {
   ByteString(Bytes)
   ArrayValue(Array[Value])
   SetValue(Array[Value])
+  MapValue(Array[(MapKey, Value)])
   Boolean(Bool)
   Null
 } derive(@debug.Debug)
@@ -19,6 +32,8 @@ pub impl Eq for Value with fn equal(self, other) -> Bool {
     (Date(a), Date(b)) => a == b
     (ByteString(a), ByteString(b)) => a == b
     (ArrayValue(a), ArrayValue(b)) => a == b
+    (MapValue(a), MapValue(b)) =>
+      a.length() == b.length() && a.all(entry => b.contains(entry))
     (Boolean(a), Boolean(b)) => a == b
     (Null, Null) => true
     (SetValue(a), SetValue(b)) =>
@@ -71,6 +86,7 @@ pub extend Fact with Eq::{equal, not_equal}
 pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
+  conditions : Array[Condition]
 }
 
 ///|
@@ -107,10 +123,11 @@ pub(all) struct Query {
 }
 
 ///|
-/// Whether one or every query in a check group must match.
+/// How queries in a check group are combined.
 pub(all) enum CheckMode {
   Any
   All
+  Reject
 }
 
 ///|
@@ -134,6 +151,9 @@ pub(all) struct Policy {
 
 ///|
 pub suberror AuthorizationError {
+  InvalidToken(String)
+  UnsupportedTokenFeature(String)
+  TokenSignatureInvalid
   FailedCheck(Int32)
   NoMatchingPolicy
   Denied(Int32)
@@ -151,6 +171,7 @@ priv enum Lexeme {
   LeftParen
   RightParen
   Comma
+  Colon
   LeftBracket
   RightBracket
   LeftBrace
@@ -194,6 +215,10 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
   if c == ',' {
     self.pos += 1
     return Comma
+  }
+  if c == ':' {
+    self.pos += 1
+    return Colon
   }
   if c == '[' {
     self.pos += 1
@@ -324,9 +349,95 @@ fn Parser::advance(self : Parser) -> Unit raise TokenError {
 }
 
 ///|
+fn to_map_key(value : Value) -> MapKey raise TokenError {
+  match value {
+    Number(value) => IntegerKey(value)
+    Text(value) => StringKey(value)
+    _ => raise Malformed("map keys must be strings or integers")
+  }
+}
+
+///|
+fn parse_map(
+  parser : Parser,
+  first_key : Value,
+  depth : Int32,
+) -> Value raise TokenError {
+  let entries : Array[(MapKey, Value)] = []
+  let mut key_value = first_key
+  let mut finished = false
+  while !finished {
+    if entries.length() >= 1024 {
+      raise Malformed("map exceeds 1024 entries")
+    }
+    let key = to_map_key(key_value)
+    if parser.current != Colon {
+      raise Malformed("expected ':' after map key")
+    }
+    parser.advance()
+    let value = parse_value(parser, depth + 1)
+    for (existing, _) in entries {
+      if existing == key {
+        raise Malformed("duplicate map key")
+      }
+    }
+    entries.push((key, value))
+    match parser.current {
+      Comma => {
+        parser.advance()
+        key_value = parse_value(parser, depth + 1)
+      }
+      RightBrace => finished = true
+      _ => raise Malformed("expected ',' or '}' in map")
+    }
+  }
+  if parser.current != RightBrace {
+    raise Malformed("unclosed map")
+  }
+  parser.advance()
+  MapValue(entries)
+}
+
+///|
+fn parse_set(
+  parser : Parser,
+  first : Value,
+  depth : Int32,
+) -> Value raise TokenError {
+  let values : Array[Value] = []
+  let mut value = first
+  let mut finished = false
+  while !finished {
+    if values.length() >= 1024 {
+      raise Malformed("set exceeds 1024 items")
+    }
+    match value {
+      SetValue(_) => raise Malformed("nested sets are not supported")
+      _ => ()
+    }
+    if !values.contains(value) {
+      values.push(value)
+    }
+    match parser.current {
+      Comma => {
+        parser.advance()
+        value = parse_value(parser, depth + 1)
+      }
+      RightBrace => finished = true
+      _ => raise Malformed("expected ',' or '}' in set")
+    }
+  }
+  if parser.current != RightBrace {
+    raise Malformed("unclosed set")
+  }
+  parser.advance()
+  SetValue(values)
+}
+
+///|
 fn parse_value(parser : Parser, depth : Int32) -> Value raise TokenError {
   if depth > 32 {
-    raise Malformed("array nesting exceeds 32 levels")
+    raise Malformed("value nesting exceeds 32 levels")
   }
   match parser.current {
     Literal(value) => {
@@ -358,40 +469,24 @@ fn parse_value(parser : Parser, depth : Int32) -> Value raise TokenError {
     }
     LeftBrace => {
       parser.advance()
-      let values : Array[Value] = []
       if parser.current == Comma {
         parser.advance()
         if parser.current != RightBrace {
           raise Malformed("invalid empty set")
         }
+        parser.advance()
+        SetValue([])
       } else if parser.current == RightBrace {
-        raise Unsupported("empty map; use the Biscuit map value type")
+        parser.advance()
+        MapValue([])
       } else {
-        let mut finished = false
-        while !finished {
-          if values.length() >= 1024 {
-            raise Malformed("set exceeds 1024 items")
-          }
-          let value = parse_value(parser, depth + 1)
-          match value {
-            SetValue(_) => raise Malformed("nested sets are not supported")
-            _ => ()
-          }
-          if !values.contains(value) {
-            values.push(value)
-          }
-          match parser.current {
-            Comma => parser.advance()
-            RightBrace => finished = true
-            _ => raise Malformed("expected ',' or '}' in set")
-          }
+        let first = parse_value(parser, depth + 1)
+        if parser.current == Colon {
+          parse_map(parser, first, depth + 1)
+        } else {
+          parse_set(parser, first, depth + 1)
         }
       }
-      if parser.current != RightBrace {
-        raise Malformed("unclosed set")
-      }
-      parser.advance()
-      SetValue(values)
     }
     _ => raise Malformed("expected constant value")
   }
@@ -641,25 +736,29 @@ fn parse_condition(text : String) -> Condition? raise TokenError {
 ///|
 /// Parse a positive Datalog rule such as
 /// `grandparent($x, $z) <- parent($x, $y), parent($y, $z)`.
-/// Expressions, negation, scopes and disjunction are unsupported.
+/// The body may also contain simple binary comparisons. Compound expressions,
+/// negation, scopes and disjunction are unsupported.
 pub fn parse_rule(text : String) -> Rule raise TokenError {
   if text.length() > 65536 {
     raise Malformed("rule exceeds 64 KiB")
   }
-  let parts = split_top_level(text, '<')
-  if parts.length() != 2 {
-    raise Malformed("expected '<-' in rule")
+  let separator = match find_rule_separator(text) {
+    Some(index) => index
+    None => raise Malformed("expected '<-' in rule")
   }
-  let right = parts[1].to_array()
-  if right.length() == 0 || right[0] != '-' {
-    raise Malformed("expected '<-' in rule")
-  }
-  let head = parse_predicate(parts[0].trim().to_owned(), allow_variables=true)
-  let body_text = String::from_array(right[1:]).trim().to_owned()
+  let chars = text.to_array()
+  let head_text = String::from_array(chars[0:separator]).trim().to_owned()
+  let body_text = String::from_array(chars[separator + 2:]).trim().to_owned()
+  let head = parse_predicate(head_text, allow_variables=true)
   let body_parts = split_top_level(body_text, ',')
   let body : Array[Predicate] = []
+  let conditions : Array[Condition] = []
   for part in body_parts {
-    body.push(parse_predicate(part.trim().to_owned(), allow_variables=true))
+    let item = part.trim().to_owned()
+    match parse_condition(item) {
+      Some(condition) => conditions.push(condition)
+      None => body.push(parse_predicate(item, allow_variables=true))
+    }
   }
   if body.length() == 0 {
     raise Malformed("rule body is empty")
@@ -680,7 +779,72 @@ pub fn parse_rule(text : String) -> Rule raise TokenError {
       _ => ()
     }
   }
-  { head, body, }
+  for condition in conditions {
+    for operand in [condition.left, condition.right] {
+      match operand {
+        Reference(name) if !bound.contains(name) =>
+          raise Malformed("rule expression references an unbound variable")
+        _ => ()
+      }
+    }
+  }
+  { head, body, conditions, }
+}
+
+///|
+/// Locate the top-level rule arrow while ignoring strings and nested values.
+fn find_rule_separator(text : String) -> Int32? {
+  let chars = text.to_array()
+  let mut quoted = false
+  let mut escaped = false
+  let mut depth = 0
+  let mut i = 0
+  while i + 1 < chars.length() {
+    let c = chars[i]
+    if quoted {
+      if escaped {
+        escaped = false
+      } else if c == '\\' {
+        escaped = true
+      } else if c == '"' {
+        quoted = false
+      }
+      i += 1
+    } else if c == '"' {
+      quoted = true
+      i += 1
+    } else if c == '(' || c == '[' || c == '{' {
+      depth += 1
+      i += 1
+    } else if c == ')' || c == ']' || c == '}' {
+      depth -= 1
+      i += 1
+    } else if depth == 0 && c == '<' && chars[i + 1] == '-' {
+      return Some(i)
+    } else {
+      i += 1
+    }
+  }
+  None
+}
+
+///|
+/// Parse one conjunctive check body. Use `Check::{queries: [...]}` directly
+/// when a check needs multiple alternative query bodies.
+pub fn parse_check_body(
+  text : String,
+  mode : CheckMode,
+) -> Check raise TokenError {
+  { mode, queries: [parse_query_body(text)], }
+}
+
+///|
+/// Parse one conjunctive policy body. Policies are evaluated in caller order.
+pub fn parse_policy_body(
+  text : String,
+  kind : PolicyKind,
+) -> Policy raise TokenError {
+  { kind, queries: [parse_query_body(text)], }
 }
 
 ///|
@@ -776,16 +940,20 @@ pub fn derive_facts(
     stable = true
     for rule in rules {
       for bindings in rule_bindings(rule, facts, max_facts) {
-        match instantiate(rule, bindings) {
-          Some(fact) =>
-            if !facts.contains(fact) {
-              if facts.length() >= max_facts {
-                raise FactLimit
+        if rule.conditions.all(condition => {
+            condition_matches(condition, bindings)
+          }) {
+          match instantiate(rule, bindings) {
+            Some(fact) =>
+              if !facts.contains(fact) {
+                if facts.length() >= max_facts {
+                  raise FactLimit
+                }
+                facts.push(fact)
+                stable = false
               }
-              facts.push(fact)
-              stable = false
-            }
-          None => ()
+            None => ()
+          }
         }
       }
     }
@@ -842,7 +1010,8 @@ pub fn evaluate_policy_set(
     }
     let matched = match check.mode {
       Any => check.queries.any(q => query_matches(q, facts))
-      All => check.queries.all(q => query_matches(q, facts))
+      All => check.queries.any(q => query_all_matches(q, facts))
+      Reject => check.queries.any(q => !query_matches(q, facts))
     }
     if !matched {
       raise FailedCheck(i)
@@ -871,6 +1040,7 @@ fn query_matches(
   let rule = Rule::{
     head: Predicate::{ name: "__query_result", terms: [], },
     body: query.body,
+    conditions: query.conditions,
   }
   for bindings in rule_bindings(rule, facts, 10000) {
     if query.conditions.all(condition => condition_matches(condition, bindings)) {
@@ -878,6 +1048,30 @@ fn query_matches(
     }
   }
   false
+}
+
+///|
+/// `check all` requires at least one body match and every matched binding to
+/// satisfy every condition in the query.
+fn query_all_matches(
+  query : Query,
+  facts : Array[Fact],
+) -> Bool raise AuthorizationError {
+  let rule = Rule::{
+    head: Predicate::{ name: "__query_result", terms: [], },
+    body: query.body,
+    conditions: query.conditions,
+  }
+  let bindings = rule_bindings(rule, facts, 10000)
+  if bindings.length() == 0 {
+    return false
+  }
+  for binding in bindings {
+    if !query.conditions.all(condition => condition_matches(condition, binding)) {
+      return false
+    }
+  }
+  true
 }
 
 ///|

@@ -38,7 +38,7 @@ test "parse nested array fact terms" {
 }
 
 ///|
-test "parse typed deduplicated set values" {
+test "parse deduplicated set values" {
   let first = @biscuit.parse_fact("roles({\"reader\", \"admin\", \"reader\"})")
   let second = @biscuit.parse_fact("roles({\"admin\", \"reader\"})")
   assert_eq(first.values[0], second.values[0])
@@ -60,8 +60,31 @@ test "parse typed deduplicated set values" {
 }
 
 ///|
-test "reject nested sets and ambiguous empty maps" {
-  for source in ["x({{1}})", "x({})"] {
+test "parse maps with integer and string keys independent of order" {
+  let first = @biscuit.parse_fact(
+    "config({\"mode\": \"read\", 1: [true], \"nested\": {\"x\": 2}})",
+  )
+  let reordered = @biscuit.parse_fact(
+    "config({\"nested\": {\"x\": 2}, \"mode\": \"read\", 1: [true]})",
+  )
+  assert_true(first == reordered)
+  assert_eq(
+    first.values[0],
+    @biscuit.MapValue([
+      (@biscuit.StringKey("mode"), @biscuit.Text("read")),
+      (@biscuit.IntegerKey(1L), @biscuit.ArrayValue([@biscuit.Boolean(true)])),
+      (
+        @biscuit.StringKey("nested"),
+        @biscuit.MapValue([(@biscuit.StringKey("x"), @biscuit.Number(2L))]),
+      ),
+    ]),
+  )
+  assert_eq(@biscuit.parse_fact("x({})").values[0], @biscuit.MapValue([]))
+}
+
+///|
+test "reject invalid map keys, duplicate keys and nested sets" {
+  for source in ["x({{1}})", "x({true: 1})", "x({\"dup\": 1, \"dup\": 2})"] {
     let accepted = try {
       ignore(@biscuit.parse_fact(source))
       true
@@ -102,6 +125,81 @@ test "evaluate comparisons against query bindings" {
     _ => false
   }
   assert_true(reject_bob)
+}
+
+///|
+test "comparison operators cover inclusive boundaries and type mismatches" {
+  let facts = [@biscuit.parse_fact("score(5)")]
+  for
+    (source, expected) in [
+      ("score($n), $n < 6", true),
+      ("score($n), $n > 4", true),
+      ("score($n), $n <= 5", true),
+      ("score($n), $n >= 5", true),
+      ("score($n), $n == 5", true),
+      ("score($n), $n != 4", true),
+      ("score($n), $n < 5", false),
+      ("score($n), $n > 5", false),
+      ("score($n), $n <= 4", false),
+      ("score($n), $n >= 6", false),
+      ("score($n), $n == 4", false),
+      ("score($n), $n != 5", false),
+      ("score($n), $n >= \"5\"", false),
+    ] {
+    let matched = try {
+      @biscuit.evaluate_policy_set(facts, [], [
+        @biscuit.Policy::{
+          kind: @biscuit.Allow,
+          queries: [@biscuit.parse_query_body(source)],
+        },
+      ])
+      true
+    } catch {
+      @biscuit.NoMatchingPolicy => false
+      _ => abort("unexpected comparison evaluation error")
+    }
+    assert_eq(matched, expected)
+  }
+}
+
+///|
+test "date ordering is supported while mixed type ordering fails closed" {
+  let facts = [@biscuit.Fact::{ name: "clock", values: [@biscuit.Date(100)], }]
+  let date_query = @biscuit.Query::{
+    body: [
+      @biscuit.Predicate::{ name: "clock", terms: [@biscuit.Variable("when")], },
+    ],
+    conditions: [
+      @biscuit.Condition::{
+        left: @biscuit.Reference("when"),
+        operator: @biscuit.LessThan,
+        right: @biscuit.Literal(@biscuit.Date(101)),
+      },
+    ],
+  }
+  @biscuit.evaluate_policy_set(facts, [], [
+    @biscuit.Policy::{ kind: @biscuit.Allow, queries: [date_query], },
+  ])
+  let mixed_query = @biscuit.Query::{
+    body: date_query.body,
+    conditions: [
+      @biscuit.Condition::{
+        left: @biscuit.Reference("when"),
+        operator: @biscuit.LessThan,
+        right: @biscuit.Literal(@biscuit.Number(101)),
+      },
+    ],
+  }
+  let matched = try {
+    @biscuit.evaluate_policy_set(facts, [], [
+      @biscuit.Policy::{ kind: @biscuit.Allow, queries: [mixed_query], },
+    ])
+    true
+  } catch {
+    @biscuit.NoMatchingPolicy => false
+    _ => abort("unexpected mixed-type comparison error")
+  }
+  assert_false(matched)
 }
 
 ///|
@@ -181,6 +279,61 @@ test "all checks pass before first matching policy is applied" {
     },
   ]
   @biscuit.evaluate_policy_set(facts, checks, policies)
+}
+
+///|
+test "all checks validate every matching binding and reject checks invert a match" {
+  let facts = [
+    @biscuit.parse_fact("right(\"file1\", \"read\")"),
+    @biscuit.parse_fact("right(\"file2\", \"write\")"),
+  ]
+  let all_query = @biscuit.parse_query_body(
+    "right($resource, $operation), $operation == \"read\"",
+  )
+  let all_passed = try {
+    @biscuit.evaluate_policy_set(
+      facts,
+      [@biscuit.Check::{ mode: @biscuit.All, queries: [all_query], }],
+      [],
+    )
+    true
+  } catch {
+    @biscuit.FailedCheck(0) => false
+    _ => true
+  }
+  assert_false(all_passed)
+
+  let reject_query = @biscuit.parse_query_body("right(\"file1\", \"read\")")
+  let rejected_match = try {
+    @biscuit.evaluate_policy_set(
+      facts,
+      [@biscuit.Check::{ mode: @biscuit.Reject, queries: [reject_query], }],
+      [],
+    )
+    true
+  } catch {
+    @biscuit.FailedCheck(0) => false
+    _ => true
+  }
+  assert_false(rejected_match)
+
+  let rejected_nonmatch = try {
+    @biscuit.evaluate_policy_set(
+      facts,
+      [
+        @biscuit.Check::{
+          mode: @biscuit.Reject,
+          queries: [@biscuit.parse_query_body("right(\"file3\", \"read\")")],
+        },
+      ],
+      [],
+    )
+    false
+  } catch {
+    @biscuit.NoMatchingPolicy => true
+    _ => false
+  }
+  assert_true(rejected_nonmatch)
 }
 
 ///|
