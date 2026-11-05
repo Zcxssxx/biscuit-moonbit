@@ -73,8 +73,35 @@ pub(all) struct Rule {
 
 ///|
 /// A conjunction of positive predicates, the query unit used by checks and policies.
+pub(all) enum CompareOperator {
+  Equal
+  NotEqual
+  LessThan
+  LessOrEqual
+  GreaterThan
+  GreaterOrEqual
+} derive(Eq)
+
+///|
+pub extend CompareOperator with Eq::{equal, not_equal}
+
+///|
+pub(all) enum ExpressionValue {
+  Literal(Value)
+  Reference(String)
+}
+
+///|
+pub(all) struct Condition {
+  left : ExpressionValue
+  operator : CompareOperator
+  right : ExpressionValue
+}
+
+///|
 pub(all) struct Query {
   body : Array[Predicate]
+  conditions : Array[Condition]
 }
 
 ///|
@@ -455,13 +482,18 @@ pub fn parse_query(text : String) -> Predicate raise TokenError {
 pub fn parse_query_body(text : String) -> Query raise TokenError {
   let parts = split_top_level(text, ',')
   let body : Array[Predicate] = []
+  let conditions : Array[Condition] = []
   for part in parts {
-    body.push(parse_predicate(part.trim().to_owned(), allow_variables=true))
+    let term = part.trim().to_owned()
+    match parse_condition(term) {
+      Some(condition) => conditions.push(condition)
+      None => body.push(parse_predicate(term, allow_variables=true))
+    }
   }
-  if body.length() == 0 {
+  if body.length() == 0 && conditions.length() == 0 {
     raise Malformed("query body is empty")
   }
-  { body, }
+  { body, conditions, }
 }
 
 ///|
@@ -506,6 +538,113 @@ fn split_top_level(
   }
   parts.push(String::from_array(chars[start:]))
   parts
+}
+
+///|
+/// Find the first supported comparison outside a literal or nested value.
+fn find_comparison(text : String) -> (Int32, Int32, CompareOperator)? {
+  let chars = text.to_array()
+  let mut quoted = false
+  let mut escaped = false
+  let mut depth = 0
+  let mut i = 0
+  while i < chars.length() {
+    let c = chars[i]
+    if quoted {
+      if escaped {
+        escaped = false
+      } else if c == '\\' {
+        escaped = true
+      } else if c == '"' {
+        quoted = false
+      }
+      i += 1
+    } else if c == '"' {
+      quoted = true
+      i += 1
+    } else if c == '(' || c == '[' || c == '{' {
+      depth += 1
+      i += 1
+    } else if c == ')' || c == ']' || c == '}' {
+      depth -= 1
+      i += 1
+    } else if depth == 0 {
+      if c == '=' && i + 1 < chars.length() && chars[i + 1] == '=' {
+        let width = if i + 2 < chars.length() && chars[i + 2] == '=' {
+          3
+        } else {
+          2
+        }
+        return Some((i, width, Equal))
+      }
+      if c == '!' && i + 1 < chars.length() && chars[i + 1] == '=' {
+        let width = if i + 2 < chars.length() && chars[i + 2] == '=' {
+          3
+        } else {
+          2
+        }
+        return Some((i, width, NotEqual))
+      }
+      if c == '<' || c == '>' {
+        let has_equal = i + 1 < chars.length() && chars[i + 1] == '='
+        let op = if c == '<' && has_equal {
+          LessOrEqual
+        } else if c == '>' && has_equal {
+          GreaterOrEqual
+        } else if c == '<' {
+          LessThan
+        } else {
+          GreaterThan
+        }
+        return Some((i, if has_equal { 2 } else { 1 }, op))
+      }
+      i += 1
+    } else {
+      i += 1
+    }
+  }
+  None
+}
+
+///|
+fn parse_expression_value(text : String) -> ExpressionValue raise TokenError {
+  let parser = Parser::{
+    lexer: Lexer::{ chars: text.to_array(), pos: 0, },
+    current: End,
+  }
+  parser.advance()
+  let result = match parser.current {
+    VariableName(name) => {
+      parser.advance()
+      Reference(name)
+    }
+    Literal(_) | LeftBracket | LeftBrace => Literal(parse_value(parser, 0))
+    _ => raise Unsupported("expression operand")
+  }
+  if parser.current != End {
+    raise Malformed("trailing expression input")
+  }
+  result
+}
+
+///|
+fn parse_condition(text : String) -> Condition? raise TokenError {
+  match find_comparison(text) {
+    None => None
+    Some((index, width, operator)) => {
+      let chars = text.to_array()
+      let left = String::from_array(chars[0:index]).trim().to_owned()
+      let right = String::from_array(chars[index + width:]).trim().to_owned()
+      if left == "" || right == "" {
+        raise Malformed("missing expression operand")
+      }
+      Some({
+        left: parse_expression_value(left),
+        operator,
+        right: parse_expression_value(right),
+      })
+    }
+  }
 }
 
 ///|
@@ -742,5 +881,60 @@ fn query_matches(
     head: Predicate::{ name: "__query_result", terms: [], },
     body: query.body,
   }
-  rule_bindings(rule, facts, 10000).length() > 0
+  for bindings in rule_bindings(rule, facts, 10000) {
+    if query.conditions.all(condition => condition_matches(condition, bindings)) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn resolve_expression_value(
+  operand : ExpressionValue,
+  bindings : Map[String, Value],
+) -> Value? {
+  match operand {
+    Literal(value) => Some(value)
+    Reference(name) => bindings.get(name)
+  }
+}
+
+///|
+fn condition_matches(
+  condition : Condition,
+  bindings : Map[String, Value],
+) -> Bool {
+  let left = match resolve_expression_value(condition.left, bindings) {
+    Some(value) => value
+    None => return false
+  }
+  let right = match resolve_expression_value(condition.right, bindings) {
+    Some(value) => value
+    None => return false
+  }
+  match condition.operator {
+    Equal => left == right
+    NotEqual => left != right
+    LessThan =>
+      match (left, right) {
+        (Number(a), Number(b)) => a < b
+        _ => false
+      }
+    LessOrEqual =>
+      match (left, right) {
+        (Number(a), Number(b)) => a <= b
+        _ => false
+      }
+    GreaterThan =>
+      match (left, right) {
+        (Number(a), Number(b)) => a > b
+        _ => false
+      }
+    GreaterOrEqual =>
+      match (left, right) {
+        (Number(a), Number(b)) => a >= b
+        _ => false
+      }
+  }
 }

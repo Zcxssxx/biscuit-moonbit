@@ -64,6 +64,38 @@ test "reject heterogeneous and nested sets" {
 }
 
 ///|
+test "evaluate comparisons against query bindings" {
+  let facts = [
+    @biscuit.parse_fact("rank(\"alice\", 5)"),
+    @biscuit.parse_fact("rank(\"bob\", 2)"),
+  ]
+  let allow = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [
+      @biscuit.parse_query_body(
+        "rank($user, $level), $level >= 3, $user == \"alice\"",
+      ),
+    ],
+  }
+  @biscuit.evaluate_policy_set(facts, [], [allow])
+  let reject_bob = try {
+    @biscuit.evaluate_policy_set(facts, [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [
+          @biscuit.parse_query_body("rank(\"bob\", $level), $level > 3"),
+        ],
+      },
+    ])
+    false
+  } catch {
+    @biscuit.NoMatchingPolicy => true
+    _ => false
+  }
+  assert_true(reject_bob)
+}
+
+///|
 test "match facts and enforce repeated variable equality" {
   let facts = [
     @biscuit.parse_fact("edge(\"a\", \"b\")"),
