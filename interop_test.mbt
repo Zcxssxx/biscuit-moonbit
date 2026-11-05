@@ -125,3 +125,26 @@ test "wrong root and altered final proof are rejected" {
     assert_true(rejected)
   }
 }
+
+///|
+test "append a v1 block to an upstream token" {
+  let new_seed = Bytes::make(32, b'\x43')
+  let result = @biscuit.append_raw(
+    test001_basic, root_key, b"\x18\x03", new_seed,
+  )
+  @biscuit.verify_signatures(result, root_key)
+}
+
+///|
+test "sealed or untrusted tokens cannot be appended" {
+  let seed = Bytes::make(32, b'\x43')
+  for token in [test020_sealed, test005_invalid_signature] {
+    let accepted = try {
+      ignore(@biscuit.append_raw(token, root_key, b"\x18\x03", seed))
+      true
+    } catch {
+      _ => false
+    }
+    assert_false(accepted)
+  }
+}

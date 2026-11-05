@@ -2,7 +2,11 @@
 package "Zcxssxx/biscuit"
 
 // Values
+pub fn append_raw(Bytes, Bytes, Bytes, Bytes) -> Bytes raise TokenError
+
 pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
+
+pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
 

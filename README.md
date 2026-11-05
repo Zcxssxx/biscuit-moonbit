@@ -10,7 +10,7 @@ Experimental MoonBit implementation of the [Eclipse Biscuit](https://www.biscuit
 - Verify Ed25519 authority and appended blocks with v0 or v1 signature payloads and verify unsealed or sealed final proofs.
 - Fail closed on unsupported algorithms, third-party signatures, unknown fields and versions, duplicate fields, malformed structures, invalid signatures and proof failures. This strict parser may reject otherwise valid tokens with unknown protobuf fields.
 - The caller supplies the root public key; a token's optional root key ID is only a hint and is not used for key selection. Choose the trusted root independently.
-- Issuance, attenuation, rules and authorization are not implemented.
+- Experimental `issue_raw` and `append_raw` construct signed tokens from already serialized blocks. They do not validate Datalog or guarantee that an appended block restricts access. The caller must supply independent, fresh, cryptographically random 32-byte seeds. `issue_raw` exposes the next seed as part of the token by design. Rules and authorization are not implemented.
 
 ## Build, test and example
 
@@ -21,9 +21,10 @@ moon check
 moon build
 moon test
 moon run examples/verify
+moon run examples/issue
 ```
 
-The example uses a public upstream test token and prints whether its signature chain is valid. It does not make an authorization decision. Tests include official Rust sample tokens for v0 and v1, a sealed token, invalid signatures, reordered blocks, and explicit unsupported cases. They are not a complete conformance suite.
+The example uses a public upstream test token and prints whether its signature chain is valid. It does not make an authorization decision. Tests include official Rust sample tokens for v0 and v1, a sealed token, invalid signatures, reordered blocks, and explicit unsupported cases. They are not a complete conformance suite. For a reverse interoperability check, install `biscuit-python==0.4.0` separately and run `python tools/interop.py`; it parses and verifies the MoonBit-generated two-block token. The issue example uses public fixed test seeds and must never be used to issue real tokens.
 
 ## Sources and licensing
 
@@ -32,3 +33,4 @@ The example uses a public upstream test token and prints whether its signature c
 - Cryptography: [hustcer/ed25519 0.6.1](https://mooncakes.io/docs/hustcer/ed25519@0.6.1), Apache-2.0, with its own transitive dependency `moonbitlang/x`. Review their licenses and security properties before use. Its maintainer states it is unaudited and not constant-time.
 
 The [implementation plan](docs/plans/2026-11-05-biscuit.md) records remaining work and release gates.
+
