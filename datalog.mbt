@@ -3,6 +3,8 @@
 pub(all) enum Value {
   Text(String)
   Number(Int64)
+  ByteString(Bytes)
+  ArrayValue(Array[Value])
   Boolean(Bool)
   Null
 } derive(Eq, @debug.Debug)
@@ -101,6 +103,8 @@ priv enum Lexeme {
   LeftParen
   RightParen
   Comma
+  LeftBracket
+  RightBracket
   End
 } derive(Eq)
 
@@ -140,6 +144,14 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
   if c == ',' {
     self.pos += 1
     return Comma
+  }
+  if c == '[' {
+    self.pos += 1
+    return LeftBracket
+  }
+  if c == ']' {
+    self.pos += 1
+    return RightBracket
   }
   if c == '$' {
     self.pos += 1
@@ -219,7 +231,24 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
       "true" => return Literal(Boolean(true))
       "false" => return Literal(Boolean(false))
       "null" => return Literal(Null)
-      _ => return Word(word)
+      _ => {
+        let chars = word.to_array()
+        if chars.length() >= 4 &&
+          chars[0] == 'h' &&
+          chars[1] == 'e' &&
+          chars[2] == 'x' &&
+          chars[3] == ':' {
+          let encoded = String::from_array(chars[4:])
+          return Literal(
+            ByteString(
+              @hex.decode(encoded) catch {
+                _ => raise Malformed("invalid hex byte string")
+              },
+            ),
+          )
+        }
+        return Word(word)
+      }
     }
   }
   raise Unsupported("Datalog token")
@@ -234,6 +263,43 @@ priv struct Parser {
 ///|
 fn Parser::advance(self : Parser) -> Unit raise TokenError {
   self.current = self.lexer.next()
+}
+
+///|
+fn parse_value(parser : Parser, depth : Int32) -> Value raise TokenError {
+  if depth > 32 {
+    raise Malformed("array nesting exceeds 32 levels")
+  }
+  match parser.current {
+    Literal(value) => {
+      parser.advance()
+      value
+    }
+    LeftBracket => {
+      parser.advance()
+      let values : Array[Value] = []
+      if parser.current != RightBracket {
+        let mut finished = false
+        while !finished {
+          if values.length() >= 1024 {
+            raise Malformed("array exceeds 1024 items")
+          }
+          values.push(parse_value(parser, depth + 1))
+          match parser.current {
+            Comma => parser.advance()
+            RightBracket => finished = true
+            _ => raise Malformed("expected ',' or ']' in array")
+          }
+        }
+      }
+      if parser.current != RightBracket {
+        raise Malformed("unclosed array")
+      }
+      parser.advance()
+      ArrayValue(values)
+    }
+    _ => raise Malformed("expected constant value")
+  }
 }
 
 ///|
@@ -261,12 +327,14 @@ fn parse_predicate(
     let mut finished = false
     while !finished {
       match parser.current {
-        Literal(value) => terms.push(Constant(value))
-        VariableName(name) if allow_variables => terms.push(Variable(name))
+        Literal(_) | LeftBracket => terms.push(Constant(parse_value(parser, 0)))
+        VariableName(name) if allow_variables => {
+          terms.push(Variable(name))
+          parser.advance()
+        }
         VariableName(_) => raise Malformed("facts cannot contain variables")
         _ => raise Malformed("expected term")
       }
-      parser.advance()
       match parser.current {
         Comma => parser.advance()
         RightParen => finished = true
@@ -343,9 +411,9 @@ fn split_top_level(
       }
     } else if c == '"' {
       quoted = true
-    } else if c == '(' {
+    } else if c == '(' || c == '[' {
       depth += 1
-    } else if c == ')' {
+    } else if c == ')' || c == ']' {
       depth -= 1
       if depth < 0 {
         raise Malformed("unbalanced parentheses")

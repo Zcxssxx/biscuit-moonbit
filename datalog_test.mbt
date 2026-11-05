@@ -10,6 +10,34 @@ test "parse common authorization fact values" {
 }
 
 ///|
+test "parse byte string facts as hexadecimal" {
+  let fact = @biscuit.parse_fact("digest(hex:00a1FF)")
+  assert_eq(fact.values[0], @biscuit.ByteString(b"\x00\xa1\xff"))
+  let invalid = try {
+    ignore(@biscuit.parse_fact("digest(hex:xyz)"))
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(invalid)
+}
+
+///|
+test "parse nested array fact terms" {
+  let fact = @biscuit.parse_fact(
+    "payload([1, \"text, with comma\", [false, null]])",
+  )
+  assert_eq(
+    fact.values[0],
+    @biscuit.ArrayValue([
+      @biscuit.Number(1L),
+      @biscuit.Text("text, with comma"),
+      @biscuit.ArrayValue([@biscuit.Boolean(false), @biscuit.Null]),
+    ]),
+  )
+}
+
+///|
 test "match facts and enforce repeated variable equality" {
   let facts = [
     @biscuit.parse_fact("edge(\"a\", \"b\")"),

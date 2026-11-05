@@ -98,6 +98,8 @@ pub(all) struct Rule {
 pub(all) enum Value {
   Text(String)
   Number(Int64)
+  ByteString(Bytes)
+  ArrayValue(Array[Value])
   Boolean(Bool)
   Null
 } derive(Eq, @debug.Debug)

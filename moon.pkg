@@ -2,4 +2,5 @@ import {
   "hustcer/ed25519",
   "moonbitlang/core/string",
   "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/hex",
 }
