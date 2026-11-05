@@ -2,16 +2,17 @@
 
 Experimental MoonBit implementation of the [Eclipse Biscuit](https://www.biscuitsec.org/) authorization-token format.
 
-**Not an authorization library yet. Do not use it to grant access or in production.** The current API verifies a supported token's cryptographic signature chain and final proof only. It does not parse or evaluate Datalog, checks, policies, scopes, expiration, revocation, or any other authorization conditions. A valid signature does not mean a request is permitted. This code and its Ed25519 dependency are unaudited; the dependency is not constant-time.
+**Not an authorization library yet. Do not use it to grant access or in production.** The token API verifies a supported token's cryptographic signature chain and final proof. `verify_authority_facts` then decodes only the authority block's ground facts for inspection. It does not load appended blocks or evaluate token rules, checks, policies, scopes, expiration, revocation, or any other authorization conditions. A valid signature does not mean a request is permitted. This code and its Ed25519 dependency are unaudited; the dependency is not constant-time.
 
 ## Current support
 
 - Parse the outer protobuf token with a 1 MiB input cap and at most 128 appended blocks.
 - Verify Ed25519 authority and appended blocks with v0 or v1 signature payloads and verify unsealed or sealed final proofs.
-- Fail closed on unsupported algorithms, third-party signatures, unknown fields and versions, duplicate fields, malformed structures, invalid signatures and proof failures. This strict parser may reject otherwise valid tokens with unknown protobuf fields.
+- Decode v3 authority-block facts after signature verification, using the block's symbol table. Inspection supports strings, integers, dates, byte arrays, booleans, null, arrays and sets; maps and variable terms are rejected. This does not parse or evaluate serialized token rules, checks, policies, scopes or appended block data.
+- Fail closed on unsupported algorithms, third-party signatures, unknown outer-token fields and versions, duplicate signed-block fields, malformed structures, invalid signatures and proof failures. This strict token parser may reject otherwise valid tokens with unknown protobuf fields.
 - The caller supplies the root public key; a token's optional root key ID is only a hint and is not used for key selection. Choose the trusted root independently.
 - Experimental `issue_raw` and `append_raw` construct signed tokens from already serialized blocks. They do not validate Datalog or guarantee that an appended block restricts access. The caller must supply independent, fresh, cryptographically random 32-byte seeds. `issue_raw` exposes the next seed as part of the token by design. Full token rule parsing and authorization are not implemented.
-- A separate Datalog subset can parse ground facts, safe positive rules, conjunctive predicate queries, and simple comparison conditions; derive a least fixed point with caller-set fact and iteration caps; and evaluate any/all checks plus first-match policies over caller-supplied facts. It supports equality on values, integer order comparisons, strings, signed 64-bit integers, booleans, null, hexadecimal bytes, nested arrays of constants, homogeneous sets, and variables. It does not parse rule expressions, dates, maps, scopes, token symbol tables, or serialized block contents. It is not connected to token verification, and is not yet a Biscuit authorizer.
+- A separate Datalog subset can parse ground facts, safe positive rules, conjunctive predicate queries, and simple comparison conditions; derive a least fixed point with caller-set fact and iteration caps; and evaluate any/all checks plus first-match policies over caller-supplied facts. It supports equality on values, order comparisons for integers and dates, strings, signed 64-bit integers, booleans, null, hexadecimal bytes, nested arrays of constants, sets, and variables. It does not parse rule expressions, maps, scopes, or serialized token rules and policies. It is not yet a Biscuit authorizer.
 
 ## Build, test and example
 

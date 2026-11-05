@@ -3,6 +3,7 @@
 pub(all) enum Value {
   Text(String)
   Number(Int64)
+  Date(Int64)
   ByteString(Bytes)
   ArrayValue(Array[Value])
   SetValue(Array[Value])
@@ -15,6 +16,7 @@ pub impl Eq for Value with fn equal(self, other) -> Bool {
   match (self, other) {
     (Text(a), Text(b)) => a == b
     (Number(a), Number(b)) => a == b
+    (Date(a), Date(b)) => a == b
     (ByteString(a), ByteString(b)) => a == b
     (ArrayValue(a), ArrayValue(b)) => a == b
     (Boolean(a), Boolean(b)) => a == b
@@ -366,25 +368,14 @@ fn parse_value(parser : Parser, depth : Int32) -> Value raise TokenError {
         raise Unsupported("empty map; use the Biscuit map value type")
       } else {
         let mut finished = false
-        let mut element_type : Int32? = None
         while !finished {
           if values.length() >= 1024 {
             raise Malformed("set exceeds 1024 items")
           }
           let value = parse_value(parser, depth + 1)
-          let kind = match value {
-            Text(_) => 0
-            Number(_) => 1
-            Boolean(_) => 2
-            ByteString(_) => 3
-            ArrayValue(_) => 4
-            Null => 5
+          match value {
             SetValue(_) => raise Malformed("nested sets are not supported")
-          }
-          match element_type {
-            Some(previous) if previous != kind =>
-              raise Malformed("set values must have one type")
-            _ => element_type = Some(kind)
+            _ => ()
           }
           if !values.contains(value) {
             values.push(value)
@@ -919,21 +910,25 @@ fn condition_matches(
     LessThan =>
       match (left, right) {
         (Number(a), Number(b)) => a < b
+        (Date(a), Date(b)) => a < b
         _ => false
       }
     LessOrEqual =>
       match (left, right) {
         (Number(a), Number(b)) => a <= b
+        (Date(a), Date(b)) => a <= b
         _ => false
       }
     GreaterThan =>
       match (left, right) {
         (Number(a), Number(b)) => a > b
+        (Date(a), Date(b)) => a > b
         _ => false
       }
     GreaterOrEqual =>
       match (left, right) {
         (Number(a), Number(b)) => a >= b
+        (Date(a), Date(b)) => a >= b
         _ => false
       }
   }

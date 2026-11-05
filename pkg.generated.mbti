@@ -26,6 +26,8 @@ pub fn parse_query_body(String) -> Query raise TokenError
 
 pub fn parse_rule(String) -> Rule raise TokenError
 
+pub fn verify_authority_facts(Bytes, Bytes) -> Array[Fact] raise TokenError
+
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
 
 // Errors
@@ -121,6 +123,7 @@ pub(all) struct Rule {
 pub(all) enum Value {
   Text(String)
   Number(Int64)
+  Date(Int64)
   ByteString(Bytes)
   ArrayValue(Array[Value])
   SetValue(Array[Value])

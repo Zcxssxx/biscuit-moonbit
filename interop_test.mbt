@@ -21,6 +21,30 @@ test "upstream basic token signature chain" {
 }
 
 ///|
+test "verified authority facts are decoded for inspection" {
+  let facts = @biscuit.verify_authority_facts(test001_basic, root_key)
+  assert_eq(facts.length(), 3)
+  let file1_read = @biscuit.parse_query("right(\"file1\", \"read\")")
+  let file2_read = @biscuit.parse_query("right(\"file2\", \"read\")")
+  let file1_write = @biscuit.parse_query("right(\"file1\", \"write\")")
+  assert_eq(@biscuit.match_query(file1_read, facts).length(), 1)
+  assert_eq(@biscuit.match_query(file2_read, facts).length(), 1)
+  assert_eq(@biscuit.match_query(file1_write, facts).length(), 1)
+}
+
+///|
+test "authority fact inspection still verifies signatures first" {
+  let accepted = try {
+    ignore(@biscuit.verify_authority_facts(test005_invalid_signature, root_key))
+    true
+  } catch {
+    @biscuit.InvalidSignature => false
+    _ => abort("expected signature verification failure")
+  }
+  assert_false(accepted)
+}
+
+///|
 test "upstream sealed token signature chain" {
   @biscuit.verify_signatures(test020_sealed, root_key)
 }

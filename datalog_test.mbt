@@ -48,11 +48,20 @@ test "parse typed deduplicated set values" {
   )
   let empty = @biscuit.parse_fact("roles({,})")
   assert_eq(empty.values[0], @biscuit.SetValue([]))
+  let mixed = @biscuit.parse_fact("values({1, true, \"x\"})")
+  assert_eq(
+    mixed.values[0],
+    @biscuit.SetValue([
+      @biscuit.Number(1L),
+      @biscuit.Boolean(true),
+      @biscuit.Text("x"),
+    ]),
+  )
 }
 
 ///|
-test "reject heterogeneous and nested sets" {
-  for source in ["x({1, true})", "x({{1}})", "x({})"] {
+test "reject nested sets and ambiguous empty maps" {
+  for source in ["x({{1}})", "x({})"] {
     let accepted = try {
       ignore(@biscuit.parse_fact(source))
       true
