@@ -18,3 +18,4 @@ jobs:
       - run: moon check
       - run: moon build
       - run: moon test
+      - run: moon run examples/verify

@@ -1,1 +1,3 @@
-
+import {
+  "hustcer/ed25519",
+}
