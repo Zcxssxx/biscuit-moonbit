@@ -1,16 +1,42 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "Zcxssxx/biscuit"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 pub fn append_raw(Bytes, Bytes, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
 
+pub fn derive_facts(Array[Fact], Array[Rule], Int32, Int32) -> Array[Fact] raise AuthorizationError
+
+pub fn evaluate_policy_set(Array[Fact], Array[Check], Array[Policy]) -> Unit raise AuthorizationError
+
 pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError
+
+pub fn match_query(Predicate, Array[Fact]) -> Array[Map[String, Value]]
+
+pub fn parse_fact(String) -> Fact raise TokenError
+
+pub fn parse_query(String) -> Predicate raise TokenError
+
+pub fn parse_rule(String) -> Rule raise TokenError
 
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
 
 // Errors
+pub suberror AuthorizationError {
+  FailedCheck(Int32)
+  NoMatchingPolicy
+  Denied(Int32)
+  FactLimit
+  IterationLimit
+  EmptyCheck(Int32)
+  EmptyPolicy(Int32)
+}
+
 pub suberror TokenError {
   Malformed(String)
   Unsupported(String)
@@ -18,6 +44,60 @@ pub suberror TokenError {
 }
 
 // Types and methods
+pub(all) struct Check {
+  mode : CheckMode
+  queries : Array[Predicate]
+}
+
+pub(all) enum CheckMode {
+  Any
+  All
+}
+
+pub(all) struct Fact {
+  name : String
+  values : Array[Value]
+} derive(Eq)
+pub fn Fact::equal(Self, Self) -> Bool
+pub fn Fact::not_equal(Self, Self) -> Bool
+
+pub(all) struct Policy {
+  kind : PolicyKind
+  queries : Array[Predicate]
+}
+
+pub(all) enum PolicyKind {
+  Allow
+  Deny
+}
+
+pub(all) struct Predicate {
+  name : String
+  terms : Array[QueryTerm]
+}
+
+pub(all) enum QueryTerm {
+  Constant(Value)
+  Variable(String)
+} derive(Eq, @debug.Debug)
+pub fn QueryTerm::equal(Self, Self) -> Bool
+pub fn QueryTerm::not_equal(Self, Self) -> Bool
+pub fn QueryTerm::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Rule {
+  head : Predicate
+  body : Array[Predicate]
+}
+
+pub(all) enum Value {
+  Text(String)
+  Number(Int64)
+  Boolean(Bool)
+  Null
+} derive(Eq, @debug.Debug)
+pub fn Value::equal(Self, Self) -> Bool
+pub fn Value::not_equal(Self, Self) -> Bool
+pub fn Value::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

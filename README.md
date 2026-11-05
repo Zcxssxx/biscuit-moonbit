@@ -10,7 +10,8 @@ Experimental MoonBit implementation of the [Eclipse Biscuit](https://www.biscuit
 - Verify Ed25519 authority and appended blocks with v0 or v1 signature payloads and verify unsealed or sealed final proofs.
 - Fail closed on unsupported algorithms, third-party signatures, unknown fields and versions, duplicate fields, malformed structures, invalid signatures and proof failures. This strict parser may reject otherwise valid tokens with unknown protobuf fields.
 - The caller supplies the root public key; a token's optional root key ID is only a hint and is not used for key selection. Choose the trusted root independently.
-- Experimental `issue_raw` and `append_raw` construct signed tokens from already serialized blocks. They do not validate Datalog or guarantee that an appended block restricts access. The caller must supply independent, fresh, cryptographically random 32-byte seeds. `issue_raw` exposes the next seed as part of the token by design. Rules and authorization are not implemented.
+- Experimental `issue_raw` and `append_raw` construct signed tokens from already serialized blocks. They do not validate Datalog or guarantee that an appended block restricts access. The caller must supply independent, fresh, cryptographically random 32-byte seeds. `issue_raw` exposes the next seed as part of the token by design. Full token rule parsing and authorization are not implemented.
+- A separate Datalog subset can parse ground facts, simple positive rules, and predicate queries; derive a least fixed point with caller-set fact and iteration caps; and evaluate query-only checks and ordered policies over caller-supplied facts. It supports strings, signed 64-bit integers, booleans, null, and variables. It does not parse or evaluate expressions, dates, bytes, sets, arrays, maps, scopes, token symbol tables, or serialized block contents. It is not connected to token verification, and is not yet a Biscuit authorizer.
 
 ## Build, test and example
 
