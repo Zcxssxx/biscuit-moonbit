@@ -100,12 +100,14 @@ pub(all) enum Value {
   Number(Int64)
   ByteString(Bytes)
   ArrayValue(Array[Value])
+  SetValue(Array[Value])
   Boolean(Bool)
   Null
-} derive(Eq, @debug.Debug)
+} derive(@debug.Debug)
 pub fn Value::equal(Self, Self) -> Bool
 pub fn Value::not_equal(Self, Self) -> Bool
 pub fn Value::to_repr(Self) -> @debug.Repr
+pub impl Eq for Value
 
 // Type aliases
 

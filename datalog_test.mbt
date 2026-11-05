@@ -38,6 +38,32 @@ test "parse nested array fact terms" {
 }
 
 ///|
+test "parse typed deduplicated set values" {
+  let first = @biscuit.parse_fact("roles({\"reader\", \"admin\", \"reader\"})")
+  let second = @biscuit.parse_fact("roles({\"admin\", \"reader\"})")
+  assert_eq(first.values[0], second.values[0])
+  assert_eq(
+    first.values[0],
+    @biscuit.SetValue([@biscuit.Text("reader"), @biscuit.Text("admin")]),
+  )
+  let empty = @biscuit.parse_fact("roles({,})")
+  assert_eq(empty.values[0], @biscuit.SetValue([]))
+}
+
+///|
+test "reject heterogeneous and nested sets" {
+  for source in ["x({1, true})", "x({{1}})", "x({})"] {
+    let accepted = try {
+      ignore(@biscuit.parse_fact(source))
+      true
+    } catch {
+      _ => false
+    }
+    assert_false(accepted)
+  }
+}
+
+///|
 test "match facts and enforce repeated variable equality" {
   let facts = [
     @biscuit.parse_fact("edge(\"a\", \"b\")"),

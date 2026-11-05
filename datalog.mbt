@@ -5,12 +5,31 @@ pub(all) enum Value {
   Number(Int64)
   ByteString(Bytes)
   ArrayValue(Array[Value])
+  SetValue(Array[Value])
   Boolean(Bool)
   Null
-} derive(Eq, @debug.Debug)
+} derive(@debug.Debug)
 
 ///|
-pub extend Value with Eq::{equal, not_equal}
+pub impl Eq for Value with fn equal(self, other) -> Bool {
+  match (self, other) {
+    (Text(a), Text(b)) => a == b
+    (Number(a), Number(b)) => a == b
+    (ByteString(a), ByteString(b)) => a == b
+    (ArrayValue(a), ArrayValue(b)) => a == b
+    (Boolean(a), Boolean(b)) => a == b
+    (Null, Null) => true
+    (SetValue(a), SetValue(b)) =>
+      a.length() == b.length() && a.all(value => b.contains(value))
+    _ => false
+  }
+}
+
+///|
+pub extend Value with Eq::{not_equal}
+
+///|
+pub extend Value with Eq::{equal}
 
 ///|
 pub extend Value with @debug.Debug::{to_repr}
@@ -105,6 +124,8 @@ priv enum Lexeme {
   Comma
   LeftBracket
   RightBracket
+  LeftBrace
+  RightBrace
   End
 } derive(Eq)
 
@@ -152,6 +173,14 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
   if c == ']' {
     self.pos += 1
     return RightBracket
+  }
+  if c == '{' {
+    self.pos += 1
+    return LeftBrace
+  }
+  if c == '}' {
+    self.pos += 1
+    return RightBrace
   }
   if c == '$' {
     self.pos += 1
@@ -298,6 +327,54 @@ fn parse_value(parser : Parser, depth : Int32) -> Value raise TokenError {
       parser.advance()
       ArrayValue(values)
     }
+    LeftBrace => {
+      parser.advance()
+      let values : Array[Value] = []
+      if parser.current == Comma {
+        parser.advance()
+        if parser.current != RightBrace {
+          raise Malformed("invalid empty set")
+        }
+      } else if parser.current == RightBrace {
+        raise Unsupported("empty map; use the Biscuit map value type")
+      } else {
+        let mut finished = false
+        let mut element_type : Int32? = None
+        while !finished {
+          if values.length() >= 1024 {
+            raise Malformed("set exceeds 1024 items")
+          }
+          let value = parse_value(parser, depth + 1)
+          let kind = match value {
+            Text(_) => 0
+            Number(_) => 1
+            Boolean(_) => 2
+            ByteString(_) => 3
+            ArrayValue(_) => 4
+            Null => 5
+            SetValue(_) => raise Malformed("nested sets are not supported")
+          }
+          match element_type {
+            Some(previous) if previous != kind =>
+              raise Malformed("set values must have one type")
+            _ => element_type = Some(kind)
+          }
+          if !values.contains(value) {
+            values.push(value)
+          }
+          match parser.current {
+            Comma => parser.advance()
+            RightBrace => finished = true
+            _ => raise Malformed("expected ',' or '}' in set")
+          }
+        }
+      }
+      if parser.current != RightBrace {
+        raise Malformed("unclosed set")
+      }
+      parser.advance()
+      SetValue(values)
+    }
     _ => raise Malformed("expected constant value")
   }
 }
@@ -327,7 +404,8 @@ fn parse_predicate(
     let mut finished = false
     while !finished {
       match parser.current {
-        Literal(_) | LeftBracket => terms.push(Constant(parse_value(parser, 0)))
+        Literal(_) | LeftBracket | LeftBrace =>
+          terms.push(Constant(parse_value(parser, 0)))
         VariableName(name) if allow_variables => {
           terms.push(Variable(name))
           parser.advance()
@@ -411,9 +489,9 @@ fn split_top_level(
       }
     } else if c == '"' {
       quoted = true
-    } else if c == '(' || c == '[' {
+    } else if c == '(' || c == '[' || c == '{' {
       depth += 1
-    } else if c == ')' || c == ']' {
+    } else if c == ')' || c == ']' || c == '}' {
       depth -= 1
       if depth < 0 {
         raise Malformed("unbalanced parentheses")
