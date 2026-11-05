@@ -39,6 +39,7 @@ moon run examples/authorize
 - Project license: Apache-2.0, see [LICENSE](LICENSE).
 - Protocol and test fixtures: [Eclipse Biscuit specification](https://doc.biscuitsec.org/reference/specifications) and [biscuit-rust](https://github.com/eclipse-biscuit/biscuit-rust), Apache-2.0. The sample byte strings in `interop_test.mbt` and `examples/verify` come from commit `21e650f31a8521af575f968925acbb56486172f9`. Their published test key is public and must never protect real resources.
 - Cryptography: [hustcer/ed25519 0.6.1](https://mooncakes.io/docs/hustcer/ed25519@0.6.1), Apache-2.0, with its own transitive dependency `moonbitlang/x`. Review their licenses and security properties before use. Its maintainer states it is unaudited and not constant-time.
+- Dependency and fixture details are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The [implementation plan](docs/plans/2026-11-05-biscuit.md) records remaining work and release gates.
 
