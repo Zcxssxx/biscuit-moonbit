@@ -70,19 +70,19 @@ test "all checks pass before first matching policy is applied" {
     @biscuit.Check::{
       mode: @biscuit.All,
       queries: [
-        @biscuit.parse_query("user(\"alice\")"),
-        @biscuit.parse_query("resource(\"report\")"),
+        @biscuit.parse_query_body("user(\"alice\")"),
+        @biscuit.parse_query_body("resource(\"report\")"),
       ],
     },
   ]
   let policies = [
     @biscuit.Policy::{
       kind: @biscuit.Deny,
-      queries: [@biscuit.parse_query("operation(\"write\")")],
+      queries: [@biscuit.parse_query_body("operation(\"write\")")],
     },
     @biscuit.Policy::{
       kind: @biscuit.Allow,
-      queries: [@biscuit.parse_query("operation(\"read\")")],
+      queries: [@biscuit.parse_query_body("operation(\"read\")")],
     },
   ]
   @biscuit.evaluate_policy_set(facts, checks, policies)
@@ -93,11 +93,11 @@ test "a missing check or unmatched policy denies by default" {
   let facts = [@biscuit.parse_fact("user(\"alice\")")]
   let check = @biscuit.Check::{
     mode: @biscuit.Any,
-    queries: [@biscuit.parse_query("resource(\"report\")")],
+    queries: [@biscuit.parse_query_body("resource(\"report\")")],
   }
   let policy = @biscuit.Policy::{
     kind: @biscuit.Allow,
-    queries: [@biscuit.parse_query("user(\"bob\")")],
+    queries: [@biscuit.parse_query_body("user(\"bob\")")],
   }
   let check_passed = try {
     @biscuit.evaluate_policy_set(facts, [check], [policy])
@@ -119,11 +119,11 @@ test "a missing check or unmatched policy denies by default" {
     @biscuit.evaluate_policy_set([@biscuit.parse_fact("role(\"admin\")")], [], [
       @biscuit.Policy::{
         kind: @biscuit.Deny,
-        queries: [@biscuit.parse_query("role(\"admin\")")],
+        queries: [@biscuit.parse_query_body("role(\"admin\")")],
       },
       @biscuit.Policy::{
         kind: @biscuit.Allow,
-        queries: [@biscuit.parse_query("role(\"admin\")")],
+        queries: [@biscuit.parse_query_body("role(\"admin\")")],
       },
     ])
     true
@@ -178,4 +178,38 @@ test "unsafe rules and evaluation exhaustion fail" {
     _ => false
   }
   assert_true(iteration_limited)
+}
+
+///|
+test "check and policy query predicates join through shared variables" {
+  let facts = [
+    @biscuit.parse_fact("user(\"alice\")"),
+    @biscuit.parse_fact("role(\"alice\", \"reader\")"),
+    @biscuit.parse_fact("role(\"bob\", \"admin\")"),
+  ]
+  let query = @biscuit.parse_query_body("user($u), role($u, \"reader\")")
+  let check = @biscuit.Check::{ mode: @biscuit.Any, queries: [query], }
+  let allow = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.parse_query_body("user($u), role($u, \"reader\")")],
+  }
+  @biscuit.evaluate_policy_set(facts, [check], [allow])
+  let impossible = @biscuit.parse_query_body("user($u), role($u, \"admin\")")
+  assert_eq(
+    @biscuit.match_query(@biscuit.parse_query("user($u)"), facts).length(),
+    1,
+  )
+  assert_false(
+    try {
+      @biscuit.evaluate_policy_set(
+        facts,
+        [@biscuit.Check::{ mode: @biscuit.Any, queries: [impossible], }],
+        [allow],
+      )
+      true
+    } catch {
+      @biscuit.FailedCheck(0) => false
+      _ => true
+    },
+  )
 }

@@ -51,6 +51,12 @@ pub(all) struct Rule {
 }
 
 ///|
+/// A conjunction of positive predicates, the query unit used by checks and policies.
+pub(all) struct Query {
+  body : Array[Predicate]
+}
+
+///|
 /// Whether one or every query in a check group must match.
 pub(all) enum CheckMode {
   Any
@@ -60,7 +66,7 @@ pub(all) enum CheckMode {
 ///|
 pub(all) struct Check {
   mode : CheckMode
-  queries : Array[Predicate]
+  queries : Array[Query]
 }
 
 ///|
@@ -73,7 +79,7 @@ pub(all) enum PolicyKind {
 /// Ordered policy query. The first matching policy determines the decision.
 pub(all) struct Policy {
   kind : PolicyKind
-  queries : Array[Predicate]
+  queries : Array[Query]
 }
 
 ///|
@@ -296,6 +302,20 @@ pub fn parse_fact(text : String) -> Fact raise TokenError {
 /// Parse one simple query predicate such as `right($path, "read")`.
 pub fn parse_query(text : String) -> Predicate raise TokenError {
   parse_predicate(text, allow_variables=true)
+}
+
+///|
+/// Parse a conjunction used by a check or policy, e.g. `user($u), role($u, "admin")`.
+pub fn parse_query_body(text : String) -> Query raise TokenError {
+  let parts = split_top_level(text, ',')
+  let body : Array[Predicate] = []
+  for part in parts {
+    body.push(parse_predicate(part.trim().to_owned(), allow_variables=true))
+  }
+  if body.length() == 0 {
+    raise Malformed("query body is empty")
+  }
+  { body, }
 }
 
 ///|
@@ -545,8 +565,8 @@ pub fn evaluate_policy_set(
       raise EmptyCheck(i)
     }
     let matched = match check.mode {
-      Any => check.queries.any(q => match_query(q, facts).length() > 0)
-      All => check.queries.all(q => match_query(q, facts).length() > 0)
+      Any => check.queries.any(q => query_matches(q, facts))
+      All => check.queries.all(q => query_matches(q, facts))
     }
     if !matched {
       raise FailedCheck(i)
@@ -557,7 +577,7 @@ pub fn evaluate_policy_set(
     if policy.queries.length() == 0 {
       raise EmptyPolicy(i)
     }
-    if policy.queries.any(q => match_query(q, facts).length() > 0) {
+    if policy.queries.any(q => query_matches(q, facts)) {
       match policy.kind {
         Allow => return
         Deny => raise Denied(i)
@@ -565,4 +585,16 @@ pub fn evaluate_policy_set(
     }
   }
   raise NoMatchingPolicy
+}
+
+///|
+fn query_matches(
+  query : Query,
+  facts : Array[Fact],
+) -> Bool raise AuthorizationError {
+  let rule = Rule::{
+    head: Predicate::{ name: "__query_result", terms: [], },
+    body: query.body,
+  }
+  rule_bindings(rule, facts, 10000).length() > 0
 }

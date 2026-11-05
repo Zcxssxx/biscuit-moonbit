@@ -22,6 +22,8 @@ pub fn parse_fact(String) -> Fact raise TokenError
 
 pub fn parse_query(String) -> Predicate raise TokenError
 
+pub fn parse_query_body(String) -> Query raise TokenError
+
 pub fn parse_rule(String) -> Rule raise TokenError
 
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
@@ -46,7 +48,7 @@ pub suberror TokenError {
 // Types and methods
 pub(all) struct Check {
   mode : CheckMode
-  queries : Array[Predicate]
+  queries : Array[Query]
 }
 
 pub(all) enum CheckMode {
@@ -63,7 +65,7 @@ pub fn Fact::not_equal(Self, Self) -> Bool
 
 pub(all) struct Policy {
   kind : PolicyKind
-  queries : Array[Predicate]
+  queries : Array[Query]
 }
 
 pub(all) enum PolicyKind {
@@ -74,6 +76,10 @@ pub(all) enum PolicyKind {
 pub(all) struct Predicate {
   name : String
   terms : Array[QueryTerm]
+}
+
+pub(all) struct Query {
+  body : Array[Predicate]
 }
 
 pub(all) enum QueryTerm {
