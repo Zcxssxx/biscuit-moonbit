@@ -5,7 +5,7 @@ use base64::engine::general_purpose::URL_SAFE;
 use base64::Engine as _;
 use biscuit_auth::{
     builder::{Algorithm, AuthorizerBuilder, BlockBuilder},
-    Biscuit, PrivateKey, PublicKey, ThirdPartyBlock,
+    Biscuit, PrivateKey, PublicKey, UnverifiedBiscuit,
 };
 
 const ROOT_SEED_HEX: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
@@ -27,7 +27,7 @@ fn public_key(key_hex: &str) -> Result<PublicKey, Box<dyn Error>> {
 
 fn authorize(token: &Biscuit, query: &str) -> Result<bool, Box<dyn Error>> {
     let mut authorizer = AuthorizerBuilder::new()
-        .policy(format!("allow if {query}"))?
+        .code(format!("allow if {query};"))?
         .build(token)?;
     Ok(authorizer.authorize().is_ok())
 }
@@ -58,7 +58,7 @@ fn run_mint_third_party() -> Result<(), Box<dyn Error>> {
     let external = private_key(EXTERNAL_SEED_HEX)?;
     let external_public_hex = external.public().to_bytes_hex();
     let check = format!("check if read(true) trusting ed25519/{external_public_hex}");
-    let base = Biscuit::builder().check(check)?.build(&root)?;
+    let base = Biscuit::builder().code(format!("{check};"))?.build(&root)?;
     if authorize(&base, "true")? {
         return Err("third-party check unexpectedly passed before signing".into());
     }
@@ -80,16 +80,15 @@ fn run_mint_third_party() -> Result<(), Box<dyn Error>> {
 
 fn run_append_moonbit_third_party() -> Result<(), Box<dyn Error>> {
     let root = public_key(&required("BISCUIT_ROOT_PUBLIC_KEY")?)?;
-    let base = Biscuit::from_base64(required("BISCUIT_TOKEN")?, root)?;
+    let unverified = UnverifiedBiscuit::from_base64(required("BISCUIT_TOKEN")?)?;
+    let base = unverified.clone().verify(root)?;
     if authorize(&base, "true")? {
         return Err("third-party check unexpectedly passed before signing".into());
     }
 
     let encoded = required("BISCUIT_THIRD_PARTY_CONTENTS")?;
     let contents = URL_SAFE.decode(encoded)?;
-    let response = ThirdPartyBlock::deserialize(&contents)?;
-    let external = public_key(&required("BISCUIT_EXTERNAL_PUBLIC_KEY")?)?;
-    let appended = base.append_third_party(external, response)?;
+    let appended = unverified.append_third_party(&contents)?.verify(root)?;
     if !authorize(&appended, "true")? {
         return Err("MoonBit third-party block did not satisfy its check".into());
     }

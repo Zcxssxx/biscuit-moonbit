@@ -180,9 +180,6 @@ def main() -> None:
                 "BISCUIT_THIRD_PARTY_CONTENTS": moonbit_third_party[
                     "THIRD_PARTY_CONTENTS"
                 ],
-                "BISCUIT_EXTERNAL_PUBLIC_KEY": moonbit_third_party[
-                    "EXTERNAL_PUBLIC_KEY"
-                ],
             },
         )
     )
