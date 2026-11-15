@@ -4,12 +4,11 @@ use std::error::Error;
 use base64::engine::general_purpose::URL_SAFE;
 use base64::Engine as _;
 use biscuit_auth::{
-    builder::{Algorithm, AuthorizerBuilder, BlockBuilder}, Biscuit, PrivateKey, PublicKey,
-    ThirdPartyBlock,
+    builder::{Algorithm, AuthorizerBuilder, BlockBuilder},
+    Biscuit, PrivateKey, PublicKey, ThirdPartyBlock,
 };
 
-const ROOT_SEED_HEX: &str =
-    "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+const ROOT_SEED_HEX: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
 const EXTERNAL_SEED_HEX: &str = "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b";
 
 fn required(name: &str) -> Result<String, Box<dyn Error>> {
@@ -46,9 +45,7 @@ fn run_mint() -> Result<(), Box<dyn Error>> {
     let authority = Biscuit::builder()
         .fact("interop_allow(true)")?
         .build(&root)?;
-    let attenuated = authority.append(
-        BlockBuilder::new().fact("attenuated(true)")?,
-    )?;
+    let attenuated = authority.append(BlockBuilder::new().fact("attenuated(true)")?)?;
 
     println!("ROOT_PUBLIC_KEY={}", root.public().to_bytes_hex());
     println!("RUST_TOKEN={}", authority.to_base64()?);
@@ -109,9 +106,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("mint") => run_mint(),
         Some("mint-third-party") => run_mint_third_party(),
         Some("append-moonbit-third-party") => run_append_moonbit_third_party(),
-        _ => Err(
-            "expected authorize, mint, mint-third-party, or append-moonbit-third-party".into(),
-        ),
+        _ => {
+            Err("expected authorize, mint, mint-third-party, or append-moonbit-third-party".into())
+        }
     }
 }
 
