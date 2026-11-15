@@ -66,6 +66,37 @@ test "verified facts retain block boundaries and shared symbols" {
 }
 
 ///|
+test "Datalog 3.2 block symbol tables append disjoint entries" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let authority = @biscuit.issue(
+    [@biscuit.parse_fact("shared_name(true)")],
+    [],
+    [],
+    5,
+    root_seed,
+    Bytes::make(32, b'\x54'),
+  )
+  let token = @biscuit.attenuate_block(
+    authority,
+    root_key,
+    [@biscuit.parse_fact("attenuated_name(false)")],
+    [],
+    [],
+    [],
+    5,
+    Bytes::make(32, b'\x55'),
+  )
+  let facts = @biscuit.verify_block_facts(token, root_key)
+  let programs = @biscuit.verify_block_programs(token, root_key)
+  assert_eq(facts.length(), 2)
+  assert_true(facts[0].facts == [@biscuit.parse_fact("shared_name(true)")])
+  assert_true(facts[1].facts == [@biscuit.parse_fact("attenuated_name(false)")])
+  assert_true(programs[0].facts == facts[0].facts)
+  assert_true(programs[1].facts == facts[1].facts)
+}
+
+///|
 test "upstream sealed token signature chain" {
   @biscuit.verify_signatures(test020_sealed, root_key)
 }

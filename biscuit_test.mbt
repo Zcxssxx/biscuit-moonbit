@@ -462,12 +462,19 @@ test "conditional rule parsing, encoding and authorization agree" {
 ///|
 test "canonical base64url transport round trips and rejects aliases" {
   assert_eq(@biscuit.token_to_base64url(b"\xfb\xff\x00"), "-_8A")
+  assert_eq(@biscuit.token_to_base64url(b"\xfb\xff"), "-_8=")
+  assert_true(@biscuit.token_from_base64url("-_8=") == b"\xfb\xff")
+  assert_true(@biscuit.token_from_base64url("-_8") == b"\xfb\xff")
   for length = 1; length <= 96; length = length + 1 {
     let bytes = Bytes::makei(length, fn(index) { index.to_byte() })
     let encoded = @biscuit.token_to_base64url(bytes)
     assert_true(@biscuit.token_from_base64url(encoded) == bytes)
   }
-  for malformed in ["", "A", "+/8", "AA==", "ab=c", "AA\n"] {
+  assert_eq(
+    @biscuit.token_to_base64url(Bytes::make(1048576, b'\x00')).length(),
+    1398104,
+  )
+  for malformed in ["", "A", "+/8", "AA=", "AA===", "ab=c", "AA\n"] {
     let accepted = try {
       ignore(@biscuit.token_from_base64url(malformed))
       true

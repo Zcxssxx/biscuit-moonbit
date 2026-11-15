@@ -1,0 +1,10 @@
+[package]
+name = "biscuit-rust-interop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "=0.22.1"
+biscuit-auth = { git = "https://github.com/eclipse-biscuit/biscuit-rust.git", rev = "2273077e2fcabeb8c03474125b4d96d57df6b4f7" }
+hex = "=0.4.3"
