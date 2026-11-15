@@ -15,14 +15,19 @@ ROOT_PUBLIC_KEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f7075
 
 
 def run(command: list[str], env: dict[str, str] | None = None) -> str:
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        if error.stderr:
+            print(error.stderr, file=sys.stderr, end="")
+        raise
     return result.stdout.strip()
 
 
