@@ -160,8 +160,8 @@ fn parse_proto_term(
           },
         )
       58 => {
-        if version < 6 {
-          raise Unsupported("sets require Datalog version 3.3")
+        if version < 3 {
+          raise Unsupported("sets require Datalog version 3.0")
         }
         let nested = Reader::{ data: r.bytes(), pos: 0, }
         let values : Array[Value] = []
@@ -404,40 +404,159 @@ fn parse_proto_fact(
 }
 
 ///|
-priv enum ExpressionOp {
-  Operand(ExpressionValue)
-  Binary(CompareOperator)
+fn parse_proto_unary(
+  data : Bytes,
+  symbols : Array[String],
+  version : Int32,
+) -> UnaryOperator raise TokenError {
+  let r = Reader::{ data, pos: 0, }
+  let mut kind : Int32? = None
+  let mut ffi_name : String? = None
+  while r.pos < data.length() {
+    match r.varint() {
+      8 if kind is None => kind = Some(r.varint())
+      8 => raise Malformed("duplicate unary operator kind")
+      16 if ffi_name is None =>
+        ffi_name = Some(symbol_at(symbols, r.varint64()))
+      16 => raise Malformed("duplicate unary external function name")
+      _ => raise Unsupported("unary operator metadata")
+    }
+  }
+  let operator = match kind {
+    Some(0) => Negate
+    Some(1) => Parens
+    Some(2) => Length
+    Some(3) if version >= 6 => TypeOf
+    Some(3) => raise Unsupported("typeof requires Datalog version 3.3")
+    Some(4) if version >= 6 =>
+      match ffi_name {
+        Some(name) => ExternalUnary(name)
+        None => raise Malformed("unary external call has no function name")
+      }
+    Some(4) => raise Unsupported("external calls require Datalog version 3.3")
+    Some(_) => raise Unsupported("unary operator")
+    None => raise Malformed("unary operator has no kind")
+  }
+  if kind != Some(4) && ffi_name is Some(_) {
+    raise Malformed("non-external unary operator carries a function name")
+  }
+  operator
 }
 
 ///|
 fn parse_proto_binary(
   data : Bytes,
+  symbols : Array[String],
   version : Int32,
-) -> CompareOperator raise TokenError {
+) -> BinaryOperator raise TokenError {
   let r = Reader::{ data, pos: 0, }
   let mut kind : Int32? = None
+  let mut ffi_name : String? = None
   while r.pos < data.length() {
     match r.varint() {
       8 if kind is None => kind = Some(r.varint())
-      8 => raise Malformed("duplicate binary operator")
+      8 => raise Malformed("duplicate binary operator kind")
+      16 if ffi_name is None =>
+        ffi_name = Some(symbol_at(symbols, r.varint64()))
+      16 => raise Malformed("duplicate binary external function name")
       _ => raise Unsupported("binary operator metadata")
     }
   }
-  match kind {
+  let operator = match kind {
     Some(0) => LessThan
     Some(1) => GreaterThan
     Some(2) => LessOrEqual
     Some(3) => GreaterOrEqual
-    Some(4) => Equal
-    Some(20) if version >= 4 => NotEqual
-    Some(20) => raise Unsupported("not-equal requires Datalog version 3.1")
-    Some(21) if version >= 6 => Equal
-    Some(22) if version >= 6 => NotEqual
+    Some(4) => StrictEqual
+    Some(5) => Contains
+    Some(6) => Prefix
+    Some(7) => Suffix
+    Some(8) => Regex
+    Some(9) => Add
+    Some(10) => Subtract
+    Some(11) => Multiply
+    Some(12) => Divide
+    Some(13) => EagerAnd
+    Some(14) => EagerOr
+    Some(15) => Intersection
+    Some(16) => Union
+    Some(17) if version >= 4 => BitwiseAnd
+    Some(18) if version >= 4 => BitwiseOr
+    Some(19) if version >= 4 => BitwiseXor
+    Some(17 | 18 | 19) =>
+      raise Unsupported("bitwise operators require Datalog version 3.1")
+    Some(20) if version >= 4 => StrictNotEqual
+    Some(20) =>
+      raise Unsupported("strict not-equal requires Datalog version 3.1")
+    Some(21) if version >= 6 => LenientEqual
+    Some(22) if version >= 6 => LenientNotEqual
     Some(21 | 22) =>
-      raise Unsupported("heterogeneous equality requires Datalog version 3.3")
+      raise Unsupported("lenient equality requires Datalog version 3.3")
+    Some(23) if version >= 6 => LazyAnd
+    Some(24) if version >= 6 => LazyOr
+    Some(23 | 24) =>
+      raise Unsupported("short-circuit operators require Datalog version 3.3")
+    Some(25) if version >= 6 => All
+    Some(26) if version >= 6 => Any
+    Some(25 | 26) =>
+      raise Unsupported("array operators require Datalog version 3.3")
+    Some(27) if version >= 6 => Get
+    Some(27) => raise Unsupported("get requires Datalog version 3.3")
+    Some(28) if version >= 6 =>
+      match ffi_name {
+        Some(name) => ExternalBinary(name)
+        None => raise Malformed("binary external call has no function name")
+      }
+    Some(28) => raise Unsupported("external calls require Datalog version 3.3")
+    Some(29) if version >= 6 => TryOr
+    Some(29) => raise Unsupported("try requires Datalog version 3.3")
     Some(_) => raise Unsupported("binary operator")
     None => raise Malformed("binary operator has no kind")
   }
+  if kind != Some(28) && ffi_name is Some(_) {
+    raise Malformed("non-external binary operator carries a function name")
+  }
+  operator
+}
+
+///|
+fn parse_proto_closure(
+  data : Bytes,
+  symbols : Array[String],
+  version : Int32,
+  depth : Int32,
+) -> ExpressionClosure raise TokenError {
+  if depth >= 32 {
+    raise Malformed("expression closure nesting exceeds 32 levels")
+  }
+  let r = Reader::{ data, pos: 0, }
+  let parameters : Array[String] = []
+  let operations : Array[ExpressionOp] = []
+  while r.pos < data.length() {
+    match r.varint() {
+      8 => {
+        if parameters.length() >= 32 {
+          raise Malformed("closure has too many parameters")
+        }
+        let name = symbol_at(symbols, r.varint64())
+        if parameters.contains(name) {
+          raise Malformed("closure has duplicate parameter")
+        }
+        parameters.push(name)
+      }
+      18 => {
+        if operations.length() >= 256 {
+          raise Malformed("closure has too many operations")
+        }
+        operations.push(
+          parse_proto_expression_op(r.bytes(), symbols, version, depth + 1),
+        )
+      }
+      _ => raise Unsupported("unknown closure field")
+    }
+  }
+  validate_expression_program(operations, parameters.length())
+  { parameters, operations, }
 }
 
 ///|
@@ -445,7 +564,11 @@ fn parse_proto_expression_op(
   data : Bytes,
   symbols : Array[String],
   version : Int32,
+  depth : Int32,
 ) -> ExpressionOp raise TokenError {
+  if depth > 32 {
+    raise Malformed("expression closure nesting exceeds 32 levels")
+  }
   let r = Reader::{ data, pos: 0, }
   let mut operation : ExpressionOp? = None
   while r.pos < data.length() {
@@ -453,12 +576,12 @@ fn parse_proto_expression_op(
     let parsed = match tag {
       10 =>
         match parse_proto_query_term(r.bytes(), symbols, version) {
-          Constant(value) => Operand(Literal(value))
-          Variable(name) => Operand(Reference(name))
+          Constant(value) => Value(Literal(value))
+          Variable(name) => Value(Reference(name))
         }
-      18 => raise Unsupported("unary expression operators")
-      26 => Binary(parse_proto_binary(r.bytes(), version))
-      34 => raise Unsupported("closure expression operators")
+      18 => Unary(parse_proto_unary(r.bytes(), symbols, version))
+      26 => Binary(parse_proto_binary(r.bytes(), symbols, version))
+      34 => Closure(parse_proto_closure(r.bytes(), symbols, version, depth + 1))
       _ => raise Unsupported("unknown expression operation")
     }
     match operation {
@@ -485,19 +608,13 @@ fn parse_proto_expression(
     if tag != 10 {
       raise Unsupported("unknown expression field")
     }
-    if operations.length() >= 64 {
-      raise Malformed("expression exceeds 64 operations")
+    if operations.length() >= 256 {
+      raise Malformed("expression exceeds 256 operations")
     }
-    operations.push(parse_proto_expression_op(r.bytes(), symbols, version))
+    operations.push(parse_proto_expression_op(r.bytes(), symbols, version, 0))
   }
-  if operations.length() != 3 {
-    raise Unsupported("only one binary comparison is supported per expression")
-  }
-  match (operations[0], operations[1], operations[2]) {
-    (Operand(left), Operand(right), Binary(operator)) =>
-      { left, right, operator, }
-    _ => raise Unsupported("expression is not a binary comparison")
-  }
+  validate_expression_program(operations, 0)
+  { operations, }
 }
 
 ///|
@@ -512,12 +629,14 @@ priv struct ParsedRule {
 fn parse_proto_rule(
   data : Bytes,
   symbols : Array[String],
+  public_keys : Array[Bytes],
   version : Int32,
 ) -> ParsedRule raise TokenError {
   let r = Reader::{ data, pos: 0, }
   let mut head : Predicate? = None
   let body : Array[Predicate] = []
   let conditions : Array[Condition] = []
+  let scope_data : Array[Bytes] = []
   let mut has_unsupported_expressions = false
   let mut has_scopes = false
   while r.pos < data.length() {
@@ -546,7 +665,7 @@ fn parse_proto_rule(
       }
       34 => {
         has_scopes = true
-        ignore(r.bytes())
+        scope_data.push(r.bytes())
       }
       _ => raise Unsupported("unknown rule field")
     }
@@ -556,8 +675,9 @@ fn parse_proto_rule(
     Some(value) => value
     None => { name: "", terms: [], }
   }
+  let scopes = parse_scope_list(scope_data, public_keys)
   {
-    rule: { head: rule_head, body, conditions, },
+    rule: { head: rule_head, body, conditions, scopes, },
     has_head,
     has_unsupported_expressions,
     has_scopes,
@@ -575,6 +695,7 @@ priv struct ParsedCheck {
 fn parse_proto_check(
   data : Bytes,
   symbols : Array[String],
+  public_keys : Array[Bytes],
   version : Int32,
 ) -> ParsedCheck raise TokenError {
   let r = Reader::{ data, pos: 0, }
@@ -590,13 +711,14 @@ fn parse_proto_check(
         if queries.length() >= 1000 {
           raise Malformed("check has too many queries")
         }
-        let parsed = parse_proto_rule(r.bytes(), symbols, version)
+        let parsed = parse_proto_rule(r.bytes(), symbols, public_keys, version)
         has_unsupported_expressions = has_unsupported_expressions ||
           parsed.has_unsupported_expressions
         has_scopes = has_scopes || parsed.has_scopes
         queries.push({
           body: parsed.rule.body,
           conditions: parsed.rule.conditions,
+          scopes: parsed.rule.scopes,
         })
       }
       16 if !kind_seen => {
@@ -624,7 +746,8 @@ priv struct EncodedFactBlock {
   facts : Array[Bytes]
   rules : Array[Bytes]
   checks : Array[Bytes]
-  has_scopes : Bool
+  scopes : Array[Bytes]
+  public_keys : Array[Bytes]
 }
 
 ///|
@@ -634,7 +757,8 @@ fn parse_encoded_fact_block(data : Bytes) -> EncodedFactBlock raise TokenError {
   let facts : Array[Bytes] = []
   let rules : Array[Bytes] = []
   let checks : Array[Bytes] = []
-  let mut has_scopes = false
+  let scopes : Array[Bytes] = []
+  let public_keys : Array[Bytes] = []
   let mut version : Int32 = 0
   let mut version_seen = false
   while r.pos < data.length() {
@@ -669,12 +793,9 @@ fn parse_encoded_fact_block(data : Bytes) -> EncodedFactBlock raise TokenError {
         }
         checks.push(r.bytes())
       }
-      58 => {
-        has_scopes = true
-        ignore(r.bytes())
-      }
+      58 => scopes.push(r.bytes())
       18 => ignore(r.bytes()) // optional context
-      66 => ignore(r.bytes()) // public key table used by scope annotations
+      66 => public_keys.push(r.bytes())
       _ => raise Unsupported("unknown block field")
     }
   }
@@ -684,7 +805,74 @@ fn parse_encoded_fact_block(data : Bytes) -> EncodedFactBlock raise TokenError {
   if version > 6 {
     raise Unsupported("Datalog version above 3.3")
   }
-  { version, symbols, facts, rules, checks, has_scopes, }
+  { version, symbols, facts, rules, checks, scopes, public_keys, }
+}
+
+///|
+fn parse_scope_list(
+  data : Array[Bytes],
+  public_keys : Array[Bytes],
+) -> Array[TrustScope] raise TokenError {
+  let scopes : Array[TrustScope] = []
+  for encoded in data {
+    let r = Reader::{ data: encoded, pos: 0, }
+    let mut scope : TrustScope? = None
+    while r.pos < encoded.length() {
+      match r.varint() {
+        8 if scope is None =>
+          scope = Some(
+            match r.varint() {
+              0 => TrustAuthority
+              1 => TrustPrevious
+              _ => raise Unsupported("unknown scope type")
+            },
+          )
+        16 if scope is None => {
+          let index = r.varint64()
+          if index >= public_keys.length().to_uint64() {
+            raise Malformed(
+              "scope public key index " +
+              index.to_string() +
+              " is out of range for " +
+              public_keys.length().to_string() +
+              " keys",
+            )
+          }
+          scope = Some(TrustPublicKey(parse_key(public_keys[index.to_int()])))
+        }
+        8 | 16 => raise Malformed("scope contains multiple variants")
+        _ => raise Unsupported("unknown scope field")
+      }
+    }
+    scopes.push(
+      match scope {
+        Some(value) => value
+        None => raise Malformed("empty scope")
+      },
+    )
+  }
+  scopes
+}
+
+///|
+/// Biscuit public-key identifiers are interned over the token chain. Each
+/// block contributes its key declarations in order, while repeated keys reuse
+/// the first token-wide index.
+fn intern_public_key_table(
+  blocks : Array[EncodedFactBlock],
+) -> Array[Bytes] raise TokenError {
+  let table : Array[Bytes] = []
+  let values : Array[Bytes] = []
+  for block in blocks {
+    for encoded_key in block.public_keys {
+      let value = parse_key(encoded_key)
+      if !values.contains(value) {
+        values.push(value)
+        table.push(encoded_key)
+      }
+    }
+  }
+  table
 }
 
 ///|
@@ -693,6 +881,20 @@ priv struct SignedBlock {
   next_key : Bytes
   signature : Bytes
   version : Int32
+  external_signature : ExternalSignature?
+}
+
+///|
+pub(all) struct ExternalSignature {
+  public_key : Bytes
+  signature : Bytes
+  encoded : Bytes
+}
+
+///|
+pub(all) struct ThirdPartyBlockContents {
+  payload : Bytes
+  external_signature : ExternalSignature
 }
 
 ///|
@@ -721,13 +923,16 @@ fn parse_block(data : Bytes) -> SignedBlock raise TokenError {
   let mut content : Bytes? = None
   let mut key : Bytes? = None
   let mut signature : Bytes? = None
+  let mut external_signature : ExternalSignature? = None
   let mut version : Int32? = None
   while r.pos < data.length() {
     match r.varint() {
       10 if content is None => content = Some(r.bytes())
       18 if key is None => key = Some(parse_key(r.bytes()))
       26 if signature is None => signature = Some(r.bytes())
-      34 => raise Unsupported("third-party block")
+      34 if external_signature is None =>
+        external_signature = Some(parse_external_signature(r.bytes()))
+      34 => raise Malformed("duplicate external signature")
       40 if version is None => version = Some(r.varint())
       _ => raise Malformed("invalid signed block field")
     }
@@ -738,9 +943,29 @@ fn parse_block(data : Bytes) -> SignedBlock raise TokenError {
       if v != 0 && v != 1 {
         raise Unsupported("signature payload version")
       }
-      { data: d, next_key: k, signature: s, version: v, }
+      { data: d, next_key: k, signature: s, version: v, external_signature, }
     }
     _ => raise Malformed("missing or invalid signed block field")
+  }
+}
+
+///|
+fn parse_external_signature(data : Bytes) -> ExternalSignature raise TokenError {
+  let r = Reader::{ data, pos: 0, }
+  let mut signature : Bytes? = None
+  let mut public_key : Bytes? = None
+  while r.pos < data.length() {
+    match r.varint() {
+      10 if signature is None => signature = Some(r.bytes())
+      18 if public_key is None => public_key = Some(parse_key(r.bytes()))
+      _ => raise Malformed("invalid external signature message")
+    }
+  }
+  match (signature, public_key) {
+    (Some(sig), Some(key)) if sig.length() == 64 =>
+      { public_key: key, signature: sig, encoded: data, }
+    (Some(_), Some(_)) => raise Malformed("invalid external signature length")
+    _ => raise Malformed("missing external signature field")
   }
 }
 
@@ -752,9 +977,28 @@ fn block_payload(block : SignedBlock, previous : Bytes?) -> Bytes {
     let payload = authority_payload_v1(block.data, block.next_key)
     match previous {
       None => payload
-      Some(sig) => payload + b"\x00PREVSIG\x00" + sig
+      Some(sig) => {
+        let chained = payload + b"\x00PREVSIG\x00" + sig
+        match block.external_signature {
+          Some(external) =>
+            chained + b"\x00EXTERNALSIG\x00" + external.signature
+          None => chained
+        }
+      }
     }
   }
+}
+
+///|
+/// Construct the external-signature payload for Datalog v3.2+ blocks.
+pub fn external_signature_payload_v1(
+  data : Bytes,
+  previous_signature : Bytes,
+) -> Bytes {
+  b"\x00EXTERNAL\x00\x00VERSION\x00\x01\x00\x00\x00\x00PAYLOAD\x00" +
+  data +
+  b"\x00PREVSIG\x00" +
+  previous_signature
 }
 
 ///|
@@ -797,12 +1041,30 @@ fn verify_signed_chain(
     Some(block) => block
     None => raise Malformed("missing authority")
   }
+  if first.external_signature is Some(_) {
+    raise Malformed("authority block cannot carry an external signature")
+  }
   if !@ed25519.verify(root_key, block_payload(first, None), first.signature) {
     raise InvalidSignature
   }
   let mut last = first
   let verified : Array[SignedBlock] = [first]
   for block in blocks {
+    match block.external_signature {
+      Some(external) => {
+        if block.version != 1 {
+          raise Unsupported("third-party blocks require signature payload v1")
+        }
+        if parse_encoded_fact_block(block.data).version < 5 {
+          raise Unsupported("third-party blocks require Datalog version 3.2")
+        }
+        let payload = external_signature_payload_v1(block.data, last.signature)
+        if !@ed25519.verify(external.public_key, payload, external.signature) {
+          raise InvalidSignature
+        }
+      }
+      None => ()
+    }
     if !@ed25519.verify(
         last.next_key,
         block_payload(block, Some(last.signature)),
@@ -870,6 +1132,8 @@ pub(all) struct VerifiedBlockProgram {
   index : Int32
   datalog_version : Int32
   signature : Bytes
+  external_public_key : Bytes?
+  scopes : Array[TrustScope]
   facts : Array[Fact]
   rules : Array[Rule]
   checks : Array[Check]
@@ -931,11 +1195,17 @@ pub fn verify_block_programs(
       parse_symbols(symbol, symbols)
     }
   }
+  let public_key_table = intern_public_key_table(encoded)
   let programs : Array[VerifiedBlockProgram] = []
   let mut total_facts = 0
   let mut total_rules = 0
   let mut total_checks = 0
   for i = 0; i < signed.length(); i = i + 1 {
+    let block_public_keys = if encoded[i].version >= 5 {
+      encoded[i].public_keys
+    } else {
+      public_key_table
+    }
     let facts : Array[Fact] = []
     for data in encoded[i].facts {
       total_facts += 1
@@ -945,17 +1215,23 @@ pub fn verify_block_programs(
       facts.push(parse_proto_fact(data, symbols, encoded[i].version))
     }
     let rules : Array[Rule] = []
-    let mut has_scopes = encoded[i].has_scopes
+    let mut has_scopes = encoded[i].scopes.length() > 0
     let mut has_unsupported_expressions = false
     for data in encoded[i].rules {
       total_rules += 1
       if total_rules > 50000 {
         raise Malformed("token has too many rules")
       }
-      let parsed = parse_proto_rule(data, symbols, encoded[i].version)
+      let parsed = parse_proto_rule(
+        data,
+        symbols,
+        block_public_keys,
+        encoded[i].version,
+      )
       if !parsed.has_head {
         raise Malformed("rule has no head")
       }
+      validate_rule_safety(parsed.rule)
       rules.push(parsed.rule)
       has_scopes = has_scopes || parsed.has_scopes
       has_unsupported_expressions = has_unsupported_expressions ||
@@ -967,7 +1243,12 @@ pub fn verify_block_programs(
       if total_checks > 10000 {
         raise Malformed("token has too many checks")
       }
-      let parsed = parse_proto_check(data, symbols, encoded[i].version)
+      let parsed = parse_proto_check(
+        data,
+        symbols,
+        block_public_keys,
+        encoded[i].version,
+      )
       checks.push(parsed.check)
       has_scopes = has_scopes || parsed.has_scopes
       has_unsupported_expressions = has_unsupported_expressions ||
@@ -977,6 +1258,10 @@ pub fn verify_block_programs(
       index: i,
       datalog_version: encoded[i].version,
       signature: signed[i].signature,
+      external_public_key: signed[i].external_signature.map(sig => {
+        sig.public_key
+      }),
+      scopes: parse_scope_list(encoded[i].scopes, block_public_keys),
       facts,
       rules,
       checks,
@@ -988,10 +1273,7 @@ pub fn verify_block_programs(
 }
 
 ///|
-/// Verify and authorize the restricted predicate/comparison, no-scope subset.
-/// Appended blocks may add checks but not facts or rules. Those limits make
-/// the default authority/current/authorizer scopes explicit in this first
-/// end-to-end authorization path; unsupported tokens fail closed.
+/// Verify a token and evaluate it with default Biscuit scopes.
 pub fn authorize_token(
   token : Bytes,
   root_key : Bytes,
@@ -1000,6 +1282,57 @@ pub fn authorize_token(
   policies : Array[Policy],
   max_facts : Int32,
   max_iterations : Int32,
+) -> Unit raise AuthorizationError {
+  authorize_token_with_checks(
+    token,
+    root_key,
+    ambient_facts,
+    ambient_rules,
+    [],
+    policies,
+    max_facts,
+    max_iterations,
+  )
+}
+
+///|
+/// Verify a token and evaluate token and authorizer Datalog with fact origins.
+pub fn authorize_token_with_checks(
+  token : Bytes,
+  root_key : Bytes,
+  ambient_facts : Array[Fact],
+  ambient_rules : Array[Rule],
+  ambient_checks : Array[Check],
+  policies : Array[Policy],
+  max_facts : Int32,
+  max_iterations : Int32,
+) -> Unit raise AuthorizationError {
+  authorize_token_with_externals(
+    token,
+    root_key,
+    ambient_facts,
+    ambient_rules,
+    ambient_checks,
+    policies,
+    max_facts,
+    max_iterations,
+    ExternalFunctions::{ unary: Map([]), binary: Map([]), },
+  )
+}
+
+///|
+/// Verify and authorize a token with caller-provided, deterministic FFI
+/// callbacks for Datalog expressions.
+pub fn authorize_token_with_externals(
+  token : Bytes,
+  root_key : Bytes,
+  ambient_facts : Array[Fact],
+  ambient_rules : Array[Rule],
+  ambient_checks : Array[Check],
+  policies : Array[Policy],
+  max_facts : Int32,
+  max_iterations : Int32,
+  externals : ExternalFunctions,
 ) -> Unit raise AuthorizationError {
   let programs = verify_block_programs(token, root_key) catch {
     Malformed(message) => raise InvalidToken(message)
@@ -1010,35 +1343,195 @@ pub fn authorize_token(
     raise InvalidToken("token contains no authority block")
   }
   for program in programs {
-    if program.has_scopes {
-      raise UnsupportedTokenFeature("explicit scope annotations")
-    }
     if program.has_unsupported_expressions {
       raise UnsupportedTokenFeature("expression bytecode")
     }
-    if program.index > 0 && program.facts.length() > 0 {
-      raise UnsupportedTokenFeature("facts in appended blocks")
+  }
+
+  let authorizer_origin = programs.length()
+  let facts : Array[FactOrigin] = []
+  for program in programs {
+    for fact in program.facts {
+      facts.push({ fact, origins: [program.index], })
     }
-    if program.index > 0 && program.rules.length() > 0 {
-      raise UnsupportedTokenFeature("rules in appended blocks")
+  }
+  for fact in ambient_facts {
+    facts.push({ fact, origins: [authorizer_origin], })
+  }
+
+  let scoped_rules : Array[ScopedRule] = []
+  for program in programs {
+    for rule in program.rules {
+      let inherited_scopes = if rule.scopes.length() > 0 {
+        rule.scopes
+      } else {
+        program.scopes
+      }
+      scoped_rules.push({
+        rule,
+        origin: program.index,
+        visible_origins: resolve_visible_origins(
+          inherited_scopes,
+          program.index,
+          authorizer_origin,
+          programs,
+        ),
+      })
     }
   }
-  let facts = ambient_facts.copy()
-  for fact in programs[0].facts {
-    facts.push(fact)
+  for rule in ambient_rules {
+    scoped_rules.push({
+      rule,
+      origin: authorizer_origin,
+      visible_origins: resolve_visible_origins(
+        rule.scopes,
+        authorizer_origin,
+        authorizer_origin,
+        programs,
+      ),
+    })
   }
-  let rules = ambient_rules.copy()
-  for rule in programs[0].rules {
-    rules.push(rule)
-  }
-  let derived = derive_facts(facts, rules, max_facts, max_iterations)
-  let checks : Array[Check] = []
+  let derived = derive_scoped_facts(
+    facts, scoped_rules, max_facts, max_iterations, externals,
+  )
+
+  let mut check_index = 0
   for program in programs {
     for check in program.checks {
-      checks.push(check)
+      if !scoped_check_matches(
+          check,
+          derived,
+          program.index,
+          program.scopes,
+          authorizer_origin,
+          programs,
+          check_index,
+          externals,
+        ) {
+        raise FailedCheck(check_index)
+      }
+      check_index += 1
     }
   }
-  evaluate_policy_set(derived, checks, policies)
+  for check in ambient_checks {
+    if !scoped_check_matches(
+        check,
+        derived,
+        authorizer_origin,
+        [],
+        authorizer_origin,
+        programs,
+        check_index,
+        externals,
+      ) {
+      raise FailedCheck(check_index)
+    }
+    check_index += 1
+  }
+
+  for i = 0; i < policies.length(); i = i + 1 {
+    let policy = policies[i]
+    if policy.queries.length() == 0 {
+      raise EmptyPolicy(i)
+    }
+    let matched = policy.queries.any(query => {
+      scoped_query_matches(
+        query,
+        derived,
+        resolve_visible_origins(
+          query.scopes,
+          authorizer_origin,
+          authorizer_origin,
+          programs,
+        ),
+        externals,
+      )
+    })
+    if matched {
+      match policy.kind {
+        Allow => return
+        Deny => raise Denied(i)
+      }
+    }
+  }
+  raise NoMatchingPolicy
+}
+
+///|
+fn add_origin(origins : Array[Int32], value : Int32) -> Unit {
+  if !origins.contains(value) {
+    origins.push(value)
+  }
+}
+
+///|
+fn resolve_visible_origins(
+  scopes : Array[TrustScope],
+  current_origin : Int32,
+  authorizer_origin : Int32,
+  programs : Array[VerifiedBlockProgram],
+) -> Array[Int32] {
+  let visible : Array[Int32] = []
+  add_origin(visible, current_origin)
+  add_origin(visible, authorizer_origin)
+  let effective_scopes = if scopes.length() == 0 {
+    [TrustAuthority]
+  } else {
+    scopes
+  }
+  for scope in effective_scopes {
+    match scope {
+      TrustAuthority => add_origin(visible, 0)
+      TrustPrevious if current_origin < authorizer_origin =>
+        for origin = 0; origin < current_origin; origin = origin + 1 {
+          add_origin(visible, origin)
+        }
+      TrustPrevious => () // `previous` is ignored for authorizer rules.
+      TrustPublicKey(key) =>
+        for program in programs {
+          if program.external_public_key == Some(key) {
+            add_origin(visible, program.index)
+          }
+        }
+    }
+  }
+  visible
+}
+
+///|
+fn scoped_check_matches(
+  check : Check,
+  facts : Array[FactOrigin],
+  current_origin : Int32,
+  block_scopes : Array[TrustScope],
+  authorizer_origin : Int32,
+  programs : Array[VerifiedBlockProgram],
+  _index : Int32,
+  externals : ExternalFunctions,
+) -> Bool raise AuthorizationError {
+  if check.queries.length() == 0 {
+    raise EmptyCheck(_index)
+  }
+  let query_matches_under_scope = fn(
+    query : Query,
+  ) -> Bool raise AuthorizationError {
+    let scopes = if query.scopes.length() > 0 {
+      query.scopes
+    } else {
+      block_scopes
+    }
+    let visible = resolve_visible_origins(
+      scopes, current_origin, authorizer_origin, programs,
+    )
+    match check.mode {
+      Any | Reject => scoped_query_matches(query, facts, visible, externals)
+      All => scoped_query_all_matches(query, facts, visible, externals)
+    }
+  }
+  match check.mode {
+    Any | All => check.queries.any(query_matches_under_scope)
+    Reject => !check.queries.any(query_matches_under_scope)
+  }
 }
 
 ///|

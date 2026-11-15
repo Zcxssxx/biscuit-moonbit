@@ -82,26 +82,27 @@ pub(all) struct Fact {
 pub extend Fact with Eq::{equal, not_equal}
 
 ///|
+/// Trusted block origins used by Datalog scope annotations.
+pub(all) enum TrustScope {
+  TrustAuthority
+  TrustPrevious
+  TrustPublicKey(Bytes)
+} derive(Eq, @debug.Debug)
+
+///|
+pub extend TrustScope with Eq::{equal, not_equal}
+
+///|
+pub extend TrustScope with @debug.Debug::{to_repr}
+
+///|
 /// A positive Datalog rule with predicate-only body.
 pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
   conditions : Array[Condition]
+  scopes : Array[TrustScope]
 }
-
-///|
-/// A conjunction of positive predicates, the query unit used by checks and policies.
-pub(all) enum CompareOperator {
-  Equal
-  NotEqual
-  LessThan
-  LessOrEqual
-  GreaterThan
-  GreaterOrEqual
-} derive(Eq)
-
-///|
-pub extend CompareOperator with Eq::{equal, not_equal}
 
 ///|
 pub(all) enum ExpressionValue {
@@ -110,16 +111,73 @@ pub(all) enum ExpressionValue {
 }
 
 ///|
+pub(all) enum UnaryOperator {
+  Negate
+  Parens
+  Length
+  TypeOf
+  ExternalUnary(String)
+}
+
+///|
+pub(all) enum BinaryOperator {
+  LessThan
+  GreaterThan
+  LessOrEqual
+  GreaterOrEqual
+  StrictEqual
+  Contains
+  Prefix
+  Suffix
+  Regex
+  Add
+  Subtract
+  Multiply
+  Divide
+  EagerAnd
+  EagerOr
+  Intersection
+  Union
+  BitwiseAnd
+  BitwiseOr
+  BitwiseXor
+  StrictNotEqual
+  LenientEqual
+  LenientNotEqual
+  LazyAnd
+  LazyOr
+  All
+  Any
+  Get
+  ExternalBinary(String)
+  TryOr
+}
+
+///|
+pub(all) struct ExpressionClosure {
+  parameters : Array[String]
+  operations : Array[ExpressionOp]
+}
+
+///|
+/// Datalog expression bytecode, kept in its protocol-defined postfix order.
+pub(all) enum ExpressionOp {
+  Value(ExpressionValue)
+  Unary(UnaryOperator)
+  Binary(BinaryOperator)
+  Closure(ExpressionClosure)
+}
+
+///|
 pub(all) struct Condition {
-  left : ExpressionValue
-  operator : CompareOperator
-  right : ExpressionValue
+  operations : Array[ExpressionOp]
 }
 
 ///|
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
+  scopes : Array[TrustScope]
 }
 
 ///|
@@ -150,6 +208,19 @@ pub(all) struct Policy {
 }
 
 ///|
+pub suberror ExpressionError {
+  TypeMismatch(String)
+  IntegerOverflow
+  DivisionByZero
+  UnboundVariable(String)
+  InvalidRegex(String)
+  MissingExternal(String)
+  ShadowedVariable(String)
+  MalformedProgram
+  StepLimit
+}
+
+///|
 pub suberror AuthorizationError {
   InvalidToken(String)
   UnsupportedTokenFeature(String)
@@ -161,6 +232,19 @@ pub suberror AuthorizationError {
   IterationLimit
   EmptyCheck(Int32)
   EmptyPolicy(Int32)
+  Expression(ExpressionError)
+}
+
+///|
+pub type UnaryExternalFn = (Value) -> Value raise AuthorizationError
+
+///|
+pub type BinaryExternalFn = (Value, Value) -> Value raise AuthorizationError
+
+///|
+pub(all) struct ExternalFunctions {
+  unary : Map[String, UnaryExternalFn]
+  binary : Map[String, BinaryExternalFn]
 }
 
 ///|
@@ -176,6 +260,9 @@ priv enum Lexeme {
   RightBracket
   LeftBrace
   RightBrace
+  Dot
+  Arrow
+  Operator(String)
   End
 } derive(Eq)
 
@@ -183,6 +270,7 @@ priv enum Lexeme {
 priv struct Lexer {
   chars : Array[Char]
   mut pos : Int32
+  mut expect_value : Bool
 }
 
 ///|
@@ -196,6 +284,12 @@ fn is_ident_continue(c : Char) -> Bool {
 }
 
 ///|
+fn Lexer::emit(self : Lexer, token : Lexeme, expect_value : Bool) -> Lexeme {
+  self.expect_value = expect_value
+  token
+}
+
+///|
 fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
   while self.pos < self.chars.length() && self.chars[self.pos].is_whitespace() {
     self.pos += 1
@@ -206,40 +300,46 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
   let c = self.chars[self.pos]
   if c == '(' {
     self.pos += 1
-    return LeftParen
+    return self.emit(LeftParen, true)
   }
   if c == ')' {
     self.pos += 1
-    return RightParen
+    return self.emit(RightParen, false)
   }
   if c == ',' {
     self.pos += 1
-    return Comma
+    return self.emit(Comma, true)
   }
   if c == ':' {
     self.pos += 1
-    return Colon
+    return self.emit(Colon, true)
   }
   if c == '[' {
     self.pos += 1
-    return LeftBracket
+    return self.emit(LeftBracket, true)
   }
   if c == ']' {
     self.pos += 1
-    return RightBracket
+    return self.emit(RightBracket, false)
   }
   if c == '{' {
     self.pos += 1
-    return LeftBrace
+    return self.emit(LeftBrace, true)
   }
   if c == '}' {
     self.pos += 1
-    return RightBrace
+    return self.emit(RightBrace, false)
+  }
+  if c == '.' {
+    self.pos += 1
+    return self.emit(Dot, true)
   }
   if c == '$' {
     self.pos += 1
     let start = self.pos
-    if self.pos >= self.chars.length() || !is_ident_start(self.chars[self.pos]) {
+    if self.pos >= self.chars.length() ||
+      !(is_ident_start(self.chars[self.pos]) ||
+      self.chars[self.pos].is_ascii_digit()) {
       raise Malformed("expected variable name after '$'")
     }
     self.pos += 1
@@ -247,7 +347,10 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
           is_ident_continue(self.chars[self.pos]) {
       self.pos += 1
     }
-    return VariableName(String::from_array(self.chars[start:self.pos]))
+    return self.emit(
+      VariableName(String::from_array(self.chars[start:self.pos])),
+      false,
+    )
   }
   if c == '"' {
     self.pos += 1
@@ -279,27 +382,76 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
     if !closed {
       raise Malformed("unterminated string")
     }
-    return Literal(Text(String::from_array(result)))
+    return self.emit(Literal(Text(String::from_array(result))), false)
   }
-  if c == '-' || c.is_ascii_digit() {
+  if c == '-' &&
+    self.pos + 1 < self.chars.length() &&
+    self.chars[self.pos + 1] == '>' {
+    self.pos += 2
+    return self.emit(Arrow, true)
+  }
+  if c.is_ascii_digit() && looks_like_date(self.chars, self.pos) {
     let start = self.pos
-    if c == '-' {
+    while self.pos < self.chars.length() &&
+          !self.chars[self.pos].is_whitespace() &&
+          self.chars[self.pos] != ',' &&
+          self.chars[self.pos] != ')' &&
+          self.chars[self.pos] != ']' &&
+          self.chars[self.pos] != '}' &&
+          self.chars[self.pos] != ';' &&
+          self.chars[self.pos] != '.' {
       self.pos += 1
     }
-    if self.pos >= self.chars.length() || !self.chars[self.pos].is_ascii_digit() {
-      raise Malformed("expected digits after minus")
-    }
+    let date_text = String::from_array(self.chars[start:self.pos])
+    return self.emit(Literal(Date(parse_date_seconds(date_text))), false)
+  }
+  if c == '-' &&
+    self.expect_value &&
+    self.pos + 1 < self.chars.length() &&
+    self.chars[self.pos + 1].is_ascii_digit() {
+    let start = self.pos
+    self.pos += 1
     while self.pos < self.chars.length() &&
           self.chars[self.pos].is_ascii_digit() {
       self.pos += 1
     }
     let number = String::from_array(self.chars[start:self.pos])
-    return Literal(
-      Number(
-        @string.parse_int64(number) catch {
-          _ => raise Malformed("integer out of range")
-        },
+    return self.emit(
+      Literal(
+        Number(
+          @string.parse_int64(number) catch {
+            _ => raise Malformed("integer out of range")
+          },
+        ),
       ),
+      false,
+    )
+  }
+  if c == '-' &&
+    (
+      !self.expect_value ||
+      self.pos + 1 >= self.chars.length() ||
+      !self.chars[self.pos + 1].is_ascii_digit()
+    ) {
+    self.pos += 1
+    return self.emit(Operator("-"), true)
+  }
+  if c.is_ascii_digit() {
+    let start = self.pos
+    while self.pos < self.chars.length() &&
+          self.chars[self.pos].is_ascii_digit() {
+      self.pos += 1
+    }
+    let number = String::from_array(self.chars[start:self.pos])
+    return self.emit(
+      Literal(
+        Number(
+          @string.parse_int64(number) catch {
+            _ => raise Malformed("integer out of range")
+          },
+        ),
+      ),
+      false,
     )
   }
   if is_ident_start(c) {
@@ -311,9 +463,9 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
     }
     let word = String::from_array(self.chars[start:self.pos])
     match word {
-      "true" => return Literal(Boolean(true))
-      "false" => return Literal(Boolean(false))
-      "null" => return Literal(Null)
+      "true" => return self.emit(Literal(Boolean(true)), false)
+      "false" => return self.emit(Literal(Boolean(false)), false)
+      "null" => return self.emit(Literal(Null), false)
       _ => {
         let chars = word.to_array()
         if chars.length() >= 4 &&
@@ -322,19 +474,150 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
           chars[2] == 'x' &&
           chars[3] == ':' {
           let encoded = String::from_array(chars[4:])
-          return Literal(
-            ByteString(
-              @hex.decode(encoded) catch {
-                _ => raise Malformed("invalid hex byte string")
-              },
+          return self.emit(
+            Literal(
+              ByteString(
+                @hex.decode(encoded) catch {
+                  _ => raise Malformed("invalid hex byte string")
+                },
+              ),
             ),
+            false,
           )
         }
-        return Word(word)
+        return self.emit(Word(word), false)
       }
     }
   }
-  raise Unsupported("Datalog token")
+  let operator = match c {
+    '=' | '!' | '<' | '>' | '&' | '|' | '^' | '+' | '*' | '/' => {
+      let start = self.pos
+      self.pos += 1
+      if self.pos < self.chars.length() &&
+        (
+          (c == '=' && self.chars[self.pos] == '=') ||
+          (c == '!' && self.chars[self.pos] == '=') ||
+          ((c == '<' || c == '>') && self.chars[self.pos] == '=') ||
+          ((c == '&' || c == '|') && self.chars[self.pos] == c)
+        ) {
+        self.pos += 1
+        if (c == '=' || c == '!') &&
+          self.pos < self.chars.length() &&
+          self.chars[self.pos] == '=' {
+          self.pos += 1
+        }
+      }
+      Some(String::from_array(self.chars[start:self.pos]))
+    }
+    _ => None
+  }
+  match operator {
+    Some(value) => self.emit(Operator(value), true)
+    None => raise Unsupported("Datalog token")
+  }
+}
+
+///|
+fn looks_like_date(chars : Array[Char], start : Int32) -> Bool {
+  start + 10 < chars.length() &&
+  chars[start + 4] == '-' &&
+  chars[start + 7] == '-' &&
+  chars[start + 10] == 'T'
+}
+
+///|
+fn parse_date_seconds(text : String) -> Int64 raise TokenError {
+  let chars = text.to_array()
+  if chars.length() < 20 ||
+    chars[4] != '-' ||
+    chars[7] != '-' ||
+    chars[10] != 'T' ||
+    chars[13] != ':' ||
+    chars[16] != ':' {
+    raise Malformed("invalid RFC 3339 date")
+  }
+  let year = parse_date_part(chars, 0, 4)
+  let month = parse_date_part(chars, 5, 2)
+  let day = parse_date_part(chars, 8, 2)
+  let hour = parse_date_part(chars, 11, 2)
+  let minute = parse_date_part(chars, 14, 2)
+  let second = parse_date_part(chars, 17, 2)
+  if month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59 {
+    raise Malformed("RFC 3339 date component is out of range")
+  }
+  let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+  let month_days = [
+    31,
+    if leap {
+      29
+    } else {
+      28
+    },
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ]
+  if day < 1 || day > month_days[month - 1] {
+    raise Malformed("RFC 3339 day is out of range")
+  }
+  let mut offset_seconds = 0
+  if chars[chars.length() - 1] != 'Z' {
+    let offset_start = 19
+    if chars.length() != 25 ||
+      (chars[offset_start] != '+' && chars[offset_start] != '-') ||
+      chars[22] != ':' {
+      raise Malformed("invalid RFC 3339 timezone")
+    }
+    let offset_hour = parse_date_part(chars, 20, 2)
+    let offset_minute = parse_date_part(chars, 23, 2)
+    if offset_hour > 23 || offset_minute > 59 {
+      raise Malformed("RFC 3339 timezone is out of range")
+    }
+    let sign = if chars[offset_start] == '+' { 1 } else { -1 }
+    offset_seconds = (offset_hour * 3600 + offset_minute * 60) * sign
+  } else if chars.length() != 20 {
+    raise Malformed("invalid RFC 3339 UTC date")
+  }
+  let year_offset = if month <= 2 { 1 } else { 0 }
+  let adjusted_year = year - year_offset
+  let era = adjusted_year / 400
+  let year_of_era = adjusted_year - era * 400
+  let month_offset = if month > 2 { -3 } else { 9 }
+  let adjusted_month = month + month_offset
+  let day_of_year = (153 * adjusted_month + 2) / 5 + day - 1
+  let day_of_era = year_of_era * 365 +
+    year_of_era / 4 -
+    year_of_era / 100 +
+    day_of_year
+  let days = era.to_int64() * 146097L + day_of_era.to_int64() - 719468L
+  days * 86400L +
+  hour.to_int64() * 3600L +
+  minute.to_int64() * 60L +
+  second.to_int64() -
+  offset_seconds.to_int64()
+}
+
+///|
+fn parse_date_part(
+  chars : Array[Char],
+  start : Int32,
+  length : Int32,
+) -> Int32 raise TokenError {
+  let mut value = 0
+  for i = start; i < start + length; i = i + 1 {
+    if i >= chars.length() || !chars[i].is_ascii_digit() {
+      raise Malformed("invalid RFC 3339 date digits")
+    }
+    value = value * 10 + chars[i].to_int() - '0'.to_int()
+  }
+  value
 }
 
 ///|
@@ -500,7 +783,7 @@ fn parse_predicate(
   if text.length() > 65536 {
     raise Malformed("predicate exceeds 64 KiB")
   }
-  let lexer = Lexer::{ chars: text.to_array(), pos: 0, }
+  let lexer = Lexer::{ chars: text.to_array(), pos: 0, expect_value: true, }
   let parser = Parser::{ lexer, current: End, }
   parser.advance()
   let name = match parser.current {
@@ -564,22 +847,173 @@ pub fn parse_query(text : String) -> Predicate raise TokenError {
 }
 
 ///|
+/// Parse the scope list after `trusting`, e.g. `authority, previous` or
+/// `ed25519/0011...`.
+pub fn parse_trust_scopes(text : String) -> Array[TrustScope] raise TokenError {
+  let scopes : Array[TrustScope] = []
+  for part in split_top_level(text, ',') {
+    let entry = part.trim().to_owned()
+    let scope = match entry {
+      "authority" => TrustAuthority
+      "previous" => TrustPrevious
+      _ if entry.has_prefix("ed25519/") => {
+        let encoded = String::from_array(entry.to_array()[8:])
+        let key = @hex.decode(encoded) catch {
+          _ => raise Malformed("invalid Ed25519 scope public key")
+        }
+        if key.length() != 32 {
+          raise Malformed("Ed25519 scope public key must be 32 bytes")
+        }
+        TrustPublicKey(key)
+      }
+      _ if entry.has_prefix("secp256r1/") =>
+        raise Unsupported("P-256 scope public keys are not supported")
+      _ => raise Malformed("unknown trusted-origin scope")
+    }
+    if !scopes.contains(scope) {
+      scopes.push(scope)
+    }
+  }
+  if scopes.length() == 0 {
+    raise Malformed("empty trusted-origin scope")
+  }
+  scopes
+}
+
+///|
+fn split_scope_suffix(
+  text : String,
+) -> (String, Array[TrustScope]) raise TokenError {
+  let chars = text.to_array()
+  let mut depth = 0
+  let mut quoted = false
+  let mut escaped = false
+  let mut index = 0
+  while index < chars.length() {
+    let c = chars[index]
+    if quoted {
+      if escaped {
+        escaped = false
+      } else if c == '\\' {
+        escaped = true
+      } else if c == '"' {
+        quoted = false
+      }
+    } else if c == '"' {
+      quoted = true
+    } else if c == '(' || c == '[' || c == '{' {
+      depth += 1
+    } else if c == ')' || c == ']' || c == '}' {
+      depth -= 1
+    } else if depth == 0 &&
+      c.is_whitespace() &&
+      index + 9 <= chars.length() &&
+      String::from_array(chars[index + 1:index + 9]) == "trusting" &&
+      index + 9 < chars.length() &&
+      chars[index + 9].is_whitespace() {
+      let source = String::from_array(chars[0:index]).trim().to_owned()
+      let scope_text = String::from_array(chars[index + 10:]).trim().to_owned()
+      return (source, parse_trust_scopes(scope_text))
+    }
+    index += 1
+  }
+  (text, [])
+}
+
+///|
 /// Parse a conjunction used by a check or policy, e.g. `user($u), role($u, "admin")`.
 pub fn parse_query_body(text : String) -> Query raise TokenError {
-  let parts = split_top_level(text, ',')
+  let (query_text, scopes) = split_scope_suffix(text)
+  let parts = split_top_level(query_text, ',')
   let body : Array[Predicate] = []
   let conditions : Array[Condition] = []
   for part in parts {
     let term = part.trim().to_owned()
-    match parse_condition(term) {
-      Some(condition) => conditions.push(condition)
-      None => body.push(parse_predicate(term, allow_variables=true))
+    if looks_like_predicate(term) {
+      body.push(parse_predicate(term, allow_variables=true))
+    } else {
+      conditions.push(parse_condition(term))
     }
   }
   if body.length() == 0 && conditions.length() == 0 {
     raise Malformed("query body is empty")
   }
-  { body, conditions, }
+  let bound : Array[String] = []
+  for predicate in body {
+    for term in predicate.terms {
+      match term {
+        Variable(name) => if !bound.contains(name) { bound.push(name) }
+        Constant(_) => ()
+      }
+    }
+  }
+  for condition in conditions {
+    validate_condition_bindings(condition, bound)
+  }
+  { body, conditions, scopes, }
+}
+
+///|
+/// Enforce the range restriction shared by text and protobuf-decoded rules.
+fn validate_rule_safety(rule : Rule) -> Unit raise TokenError {
+  let bound : Array[String] = []
+  for predicate in rule.body {
+    for term in predicate.terms {
+      match term {
+        Variable(name) => if !bound.contains(name) { bound.push(name) }
+        Constant(_) => ()
+      }
+    }
+  }
+  for term in rule.head.terms {
+    match term {
+      Variable(name) if !bound.contains(name) =>
+        raise Malformed("unsafe rule head variable")
+      _ => ()
+    }
+  }
+  for condition in rule.conditions {
+    validate_condition_bindings(condition, bound)
+  }
+}
+
+///|
+fn looks_like_predicate(text : String) -> Bool {
+  let chars = text.to_array()
+  if chars.length() == 0 || !is_ident_start(chars[0]) {
+    return false
+  }
+  let mut index = 1
+  while index < chars.length() && is_ident_continue(chars[index]) {
+    index += 1
+  }
+  while index < chars.length() && chars[index].is_whitespace() {
+    index += 1
+  }
+  index < chars.length() && chars[index] == '('
+}
+
+///|
+fn validate_condition_bindings(
+  condition : Condition,
+  bound : Array[String],
+) -> Unit raise TokenError {
+  for name in condition_references(condition) {
+    if !bound.contains(name) {
+      raise Malformed("expression references an unbound variable")
+    }
+  }
+  for operation in condition.operations {
+    match operation {
+      Closure(closure) =>
+        for name in closure.parameters {
+          if bound.contains(name) {
+            raise Malformed("closure parameter shadows an existing variable")
+          }
+        }
+      _ => ()
+    }
+  }
 }
 
 ///|
@@ -627,117 +1061,220 @@ fn split_top_level(
 }
 
 ///|
-/// Find the first supported comparison outside a literal or nested value.
-fn find_comparison(text : String) -> (Int32, Int32, CompareOperator)? {
-  let chars = text.to_array()
-  let mut quoted = false
-  let mut escaped = false
-  let mut depth = 0
-  let mut i = 0
-  while i < chars.length() {
-    let c = chars[i]
-    if quoted {
-      if escaped {
-        escaped = false
-      } else if c == '\\' {
-        escaped = true
-      } else if c == '"' {
-        quoted = false
-      }
-      i += 1
-    } else if c == '"' {
-      quoted = true
-      i += 1
-    } else if c == '(' || c == '[' || c == '{' {
-      depth += 1
-      i += 1
-    } else if c == ')' || c == ']' || c == '}' {
-      depth -= 1
-      i += 1
-    } else if depth == 0 {
-      if c == '=' && i + 1 < chars.length() && chars[i + 1] == '=' {
-        let width = if i + 2 < chars.length() && chars[i + 2] == '=' {
-          3
-        } else {
-          2
-        }
-        return Some((i, width, Equal))
-      }
-      if c == '!' && i + 1 < chars.length() && chars[i + 1] == '=' {
-        let width = if i + 2 < chars.length() && chars[i + 2] == '=' {
-          3
-        } else {
-          2
-        }
-        return Some((i, width, NotEqual))
-      }
-      if c == '<' || c == '>' {
-        let has_equal = i + 1 < chars.length() && chars[i + 1] == '='
-        let op = if c == '<' && has_equal {
-          LessOrEqual
-        } else if c == '>' && has_equal {
-          GreaterOrEqual
-        } else if c == '<' {
-          LessThan
-        } else {
-          GreaterThan
-        }
-        return Some((i, if has_equal { 2 } else { 1 }, op))
-      }
-      i += 1
-    } else {
-      i += 1
-    }
+
+///|
+fn expression_operator(source : String) -> (Int32, BinaryOperator, Bool, Bool)? {
+  match source {
+    "*" => Some((8, Multiply, false, false))
+    "/" => Some((8, Divide, false, false))
+    "+" => Some((7, Add, false, false))
+    "-" => Some((7, Subtract, false, false))
+    "&" => Some((6, BitwiseAnd, false, false))
+    "|" => Some((5, BitwiseOr, false, false))
+    "^" => Some((4, BitwiseXor, false, false))
+    "<" => Some((3, LessThan, true, false))
+    ">" => Some((3, GreaterThan, true, false))
+    "<=" => Some((3, LessOrEqual, true, false))
+    ">=" => Some((3, GreaterOrEqual, true, false))
+    "===" => Some((3, StrictEqual, true, false))
+    "!==" => Some((3, StrictNotEqual, true, false))
+    "==" => Some((3, LenientEqual, true, false))
+    "!=" => Some((3, LenientNotEqual, true, false))
+    "&&" => Some((2, LazyAnd, false, true))
+    "||" => Some((1, LazyOr, false, true))
+    _ => None
   }
-  None
 }
 
 ///|
-fn parse_expression_value(text : String) -> ExpressionValue raise TokenError {
-  let parser = Parser::{
-    lexer: Lexer::{ chars: text.to_array(), pos: 0, },
-    current: End,
-  }
-  parser.advance()
-  let result = match parser.current {
+fn parse_expression_primary(
+  parser : Parser,
+) -> Array[ExpressionOp] raise TokenError {
+  let operations : Array[ExpressionOp] = match parser.current {
     VariableName(name) => {
       parser.advance()
-      Reference(name)
+      [Value(Reference(name))]
     }
-    Literal(_) | LeftBracket | LeftBrace => Literal(parse_value(parser, 0))
-    _ => raise Unsupported("expression operand")
+    Literal(_) | LeftBracket | LeftBrace =>
+      [Value(Literal(parse_value(parser, 0)))]
+    Operator("!") => {
+      parser.advance()
+      let nested = parse_expression_ops(parser, 9)
+      nested.push(Unary(Negate))
+      nested
+    }
+    LeftParen => {
+      parser.advance()
+      let nested = parse_expression_ops(parser, 0)
+      if parser.current != RightParen {
+        raise Malformed("unclosed parenthesized expression")
+      }
+      parser.advance()
+      let result = nested.copy()
+      result.push(Unary(Parens))
+      result
+    }
+    _ => raise Malformed("expected Datalog expression operand")
   }
-  if parser.current != End {
-    raise Malformed("trailing expression input")
+  parse_expression_methods(parser, operations)
+}
+
+///|
+fn parse_expression_methods(
+  parser : Parser,
+  initial : Array[ExpressionOp],
+) -> Array[ExpressionOp] raise TokenError {
+  let operations = initial
+  while parser.current == Dot {
+    parser.advance()
+    let method_name = match parser.current {
+      Word(name) => name
+      _ => raise Malformed("expected method_name name after '.'")
+    }
+    parser.advance()
+    if parser.current != LeftParen {
+      raise Malformed("expected '(' after method_name name")
+    }
+    parser.advance()
+    if method_name == "length" || method_name == "type" {
+      if parser.current != RightParen {
+        raise Malformed("method_name takes no arguments")
+      }
+      parser.advance()
+      operations.push(
+        Unary(if method_name == "length" { Length } else { TypeOf }),
+      )
+    } else if method_name == "any" || method_name == "all" {
+      let parameter = match parser.current {
+        VariableName(name) => name
+        _ =>
+          raise Malformed("collection method_name expects a closure parameter")
+      }
+      parser.advance()
+      if parser.current != Arrow {
+        raise Malformed("expected '->' in closure")
+      }
+      parser.advance()
+      let body = parse_expression_ops(parser, 0)
+      if parser.current != RightParen {
+        raise Malformed("unclosed closure argument")
+      }
+      parser.advance()
+      operations.push(Closure({ parameters: [parameter], operations: body, }))
+      operations.push(Binary(if method_name == "any" { Any } else { All }))
+    } else if method_name == "try_or" {
+      let fallback = parse_expression_ops(parser, 0)
+      if parser.current != RightParen {
+        raise Malformed("try_or expects one argument")
+      }
+      parser.advance()
+      let left = operations.copy()
+      operations.clear()
+      operations.push(Closure({ parameters: [], operations: left, }))
+      for operation in fallback {
+        operations.push(operation)
+      }
+      operations.push(Binary(TryOr))
+    } else if method_name.has_prefix("extern::") {
+      let name = String::from_array(method_name.to_array()[8:])
+      if parser.current == RightParen {
+        parser.advance()
+        operations.push(Unary(ExternalUnary(name)))
+      } else {
+        let argument = parse_expression_ops(parser, 0)
+        if parser.current != RightParen {
+          raise Malformed("external binary call expects one argument")
+        }
+        parser.advance()
+        for operation in argument {
+          operations.push(operation)
+        }
+        operations.push(Binary(ExternalBinary(name)))
+      }
+    } else {
+      let argument = parse_expression_ops(parser, 0)
+      if parser.current != RightParen {
+        raise Malformed("method_name expects one argument")
+      }
+      parser.advance()
+      for operation in argument {
+        operations.push(operation)
+      }
+      let operator = match method_name {
+        "contains" => Contains
+        "starts_with" => Prefix
+        "ends_with" => Suffix
+        "matches" => Regex
+        "intersection" => Intersection
+        "union" => Union
+        "get" => Get
+        _ => raise Unsupported("Datalog method_name " + method_name)
+      }
+      operations.push(Binary(operator))
+    }
+  }
+  operations
+}
+
+///|
+fn parse_expression_ops(
+  parser : Parser,
+  minimum_precedence : Int32,
+) -> Array[ExpressionOp] raise TokenError {
+  let result = parse_expression_primary(parser)
+  let mut saw_comparison = false
+  while true {
+    let (precedence, operator, is_comparison, is_lazy) = match parser.current {
+      Operator(source) =>
+        match expression_operator(source) {
+          Some(info) => info
+          None => break
+        }
+      _ => break
+    }
+    if precedence < minimum_precedence {
+      break
+    }
+    if is_comparison && saw_comparison {
+      raise Malformed("comparison operators are not associative")
+    }
+    parser.advance()
+    let right = parse_expression_ops(parser, precedence + 1)
+    if is_lazy {
+      result.push(Closure({ parameters: [], operations: right, }))
+    } else {
+      for operation in right {
+        result.push(operation)
+      }
+    }
+    result.push(Binary(operator))
+    saw_comparison = saw_comparison || is_comparison
   }
   result
 }
 
 ///|
-fn parse_condition(text : String) -> Condition? raise TokenError {
-  match find_comparison(text) {
-    None => None
-    Some((index, width, operator)) => {
-      let chars = text.to_array()
-      let left = String::from_array(chars[0:index]).trim().to_owned()
-      let right = String::from_array(chars[index + width:]).trim().to_owned()
-      if left == "" || right == "" {
-        raise Malformed("missing expression operand")
-      }
-      Some({
-        left: parse_expression_value(left),
-        operator,
-        right: parse_expression_value(right),
-      })
-    }
+fn parse_condition(text : String) -> Condition raise TokenError {
+  if text.trim().length() == 0 {
+    raise Malformed("empty Datalog expression")
   }
+  let parser = Parser::{
+    lexer: Lexer::{ chars: text.to_array(), pos: 0, expect_value: true, },
+    current: End,
+  }
+  parser.advance()
+  let operations = parse_expression_ops(parser, 0)
+  if parser.current != End {
+    raise Malformed("trailing input after Datalog expression")
+  }
+  validate_expression_program(operations, 0)
+  { operations, }
 }
 
 ///|
 /// Parse a positive Datalog rule such as
 /// `grandparent($x, $z) <- parent($x, $y), parent($y, $z)`.
-/// The body may also contain simple binary comparisons. Compound expressions,
-/// negation, scopes and disjunction are unsupported.
+/// The body may contain predicates and full postfix-compatible expressions.
 pub fn parse_rule(text : String) -> Rule raise TokenError {
   if text.length() > 65536 {
     raise Malformed("rule exceeds 64 KiB")
@@ -748,47 +1285,26 @@ pub fn parse_rule(text : String) -> Rule raise TokenError {
   }
   let chars = text.to_array()
   let head_text = String::from_array(chars[0:separator]).trim().to_owned()
-  let body_text = String::from_array(chars[separator + 2:]).trim().to_owned()
+  let body_source = String::from_array(chars[separator + 2:]).trim().to_owned()
+  let (body_text, scopes) = split_scope_suffix(body_source)
   let head = parse_predicate(head_text, allow_variables=true)
   let body_parts = split_top_level(body_text, ',')
   let body : Array[Predicate] = []
   let conditions : Array[Condition] = []
   for part in body_parts {
     let item = part.trim().to_owned()
-    match parse_condition(item) {
-      Some(condition) => conditions.push(condition)
-      None => body.push(parse_predicate(item, allow_variables=true))
+    if looks_like_predicate(item) {
+      body.push(parse_predicate(item, allow_variables=true))
+    } else {
+      conditions.push(parse_condition(item))
     }
   }
-  if body.length() == 0 {
+  if body.length() == 0 && conditions.length() == 0 {
     raise Malformed("rule body is empty")
   }
-  let bound : Array[String] = []
-  for predicate in body {
-    for term in predicate.terms {
-      match term {
-        Variable(name) => if !bound.contains(name) { bound.push(name) }
-        Constant(_) => ()
-      }
-    }
-  }
-  for term in head.terms {
-    match term {
-      Variable(name) if !bound.contains(name) =>
-        raise Malformed("unsafe rule head variable")
-      _ => ()
-    }
-  }
-  for condition in conditions {
-    for operand in [condition.left, condition.right] {
-      match operand {
-        Reference(name) if !bound.contains(name) =>
-          raise Malformed("rule expression references an unbound variable")
-        _ => ()
-      }
-    }
-  }
-  { head, body, conditions, }
+  let rule = { head, body, conditions, scopes, }
+  validate_rule_safety(rule)
+  rule
 }
 
 ///|
@@ -930,6 +1446,21 @@ pub fn derive_facts(
   max_facts : Int32,
   max_iterations : Int32,
 ) -> Array[Fact] raise AuthorizationError {
+  derive_facts_with_externals(initial, rules, max_facts, max_iterations, ExternalFunctions::{
+    unary: Map([]),
+    binary: Map([]),
+  })
+}
+
+///|
+/// Compute rule closures while resolving registered external functions.
+pub fn derive_facts_with_externals(
+  initial : Array[Fact],
+  rules : Array[Rule],
+  max_facts : Int32,
+  max_iterations : Int32,
+  externals : ExternalFunctions,
+) -> Array[Fact] raise AuthorizationError {
   if initial.length() > max_facts {
     raise FactLimit
   }
@@ -941,7 +1472,7 @@ pub fn derive_facts(
     for rule in rules {
       for bindings in rule_bindings(rule, facts, max_facts) {
         if rule.conditions.all(condition => {
-            condition_matches(condition, bindings)
+            condition_matches_with_externals(condition, bindings, externals)
           }) {
           match instantiate(rule, bindings) {
             Some(fact) =>
@@ -1003,15 +1534,38 @@ pub fn evaluate_policy_set(
   checks : Array[Check],
   policies : Array[Policy],
 ) -> Unit raise AuthorizationError {
+  evaluate_policy_set_with_externals(facts, checks, policies, ExternalFunctions::{
+    unary: Map([]),
+    binary: Map([]),
+  })
+}
+
+///|
+/// Evaluate checks and policies with an explicit, caller-controlled FFI table.
+pub fn evaluate_policy_set_with_externals(
+  facts : Array[Fact],
+  checks : Array[Check],
+  policies : Array[Policy],
+  externals : ExternalFunctions,
+) -> Unit raise AuthorizationError {
   for i = 0; i < checks.length(); i = i + 1 {
     let check = checks[i]
     if check.queries.length() == 0 {
       raise EmptyCheck(i)
     }
     let matched = match check.mode {
-      Any => check.queries.any(q => query_matches(q, facts))
-      All => check.queries.any(q => query_all_matches(q, facts))
-      Reject => check.queries.any(q => !query_matches(q, facts))
+      Any =>
+        check.queries.any(q => query_matches_with_externals(q, facts, externals))
+      All =>
+        check.queries.any(q => {
+          query_all_matches_with_externals(q, facts, externals)
+        })
+      // Queries in a reject check are alternatives: any matching query rejects.
+      // The check succeeds only when none of them match.
+      Reject =>
+        !check.queries.any(q => {
+          query_matches_with_externals(q, facts, externals)
+        })
     }
     if !matched {
       raise FailedCheck(i)
@@ -1022,7 +1576,7 @@ pub fn evaluate_policy_set(
     if policy.queries.length() == 0 {
       raise EmptyPolicy(i)
     }
-    if policy.queries.any(q => query_matches(q, facts)) {
+    if policy.queries.any(q => query_matches_with_externals(q, facts, externals)) {
       match policy.kind {
         Allow => return
         Deny => raise Denied(i)
@@ -1033,17 +1587,21 @@ pub fn evaluate_policy_set(
 }
 
 ///|
-fn query_matches(
+fn query_matches_with_externals(
   query : Query,
   facts : Array[Fact],
+  externals : ExternalFunctions,
 ) -> Bool raise AuthorizationError {
   let rule = Rule::{
     head: Predicate::{ name: "__query_result", terms: [], },
     body: query.body,
     conditions: query.conditions,
+    scopes: [],
   }
   for bindings in rule_bindings(rule, facts, 10000) {
-    if query.conditions.all(condition => condition_matches(condition, bindings)) {
+    if query.conditions.all(condition => {
+        condition_matches_with_externals(condition, bindings, externals)
+      }) {
       return true
     }
   }
@@ -1053,21 +1611,25 @@ fn query_matches(
 ///|
 /// `check all` requires at least one body match and every matched binding to
 /// satisfy every condition in the query.
-fn query_all_matches(
+fn query_all_matches_with_externals(
   query : Query,
   facts : Array[Fact],
+  externals : ExternalFunctions,
 ) -> Bool raise AuthorizationError {
   let rule = Rule::{
     head: Predicate::{ name: "__query_result", terms: [], },
     body: query.body,
     conditions: query.conditions,
+    scopes: [],
   }
   let bindings = rule_bindings(rule, facts, 10000)
   if bindings.length() == 0 {
     return false
   }
   for binding in bindings {
-    if !query.conditions.all(condition => condition_matches(condition, binding)) {
+    if !query.conditions.all(condition => {
+        condition_matches_with_externals(condition, binding, externals)
+      }) {
       return false
     }
   }
@@ -1075,55 +1637,60 @@ fn query_all_matches(
 }
 
 ///|
-fn resolve_expression_value(
-  operand : ExpressionValue,
+
+///|
+fn condition_matches_with_externals(
+  condition : Condition,
   bindings : Map[String, Value],
-) -> Value? {
-  match operand {
-    Literal(value) => Some(value)
-    Reference(name) => bindings.get(name)
+  externals : ExternalFunctions,
+) -> Bool raise AuthorizationError {
+  match
+    evaluate_expression_with_externals(
+      condition.operations,
+      bindings,
+      10000,
+      externals,
+    ) {
+    Boolean(result) => result
+    _ =>
+      raise Expression(
+        TypeMismatch("Datalog expression did not return a boolean"),
+      )
   }
 }
 
 ///|
-fn condition_matches(
-  condition : Condition,
-  bindings : Map[String, Value],
-) -> Bool {
-  let left = match resolve_expression_value(condition.left, bindings) {
-    Some(value) => value
-    None => return false
+fn condition_references(condition : Condition) -> Array[String] {
+  expression_references(condition.operations, [])
+}
+
+///|
+fn expression_references(
+  operations : Array[ExpressionOp],
+  local_names : Array[String],
+) -> Array[String] {
+  let result : Array[String] = []
+  for operation in operations {
+    match operation {
+      Value(Reference(name)) if !local_names.contains(name) =>
+        if !result.contains(name) {
+          result.push(name)
+        }
+      Closure(closure) => {
+        let nested_names = local_names.copy()
+        for name in closure.parameters {
+          if !nested_names.contains(name) {
+            nested_names.push(name)
+          }
+        }
+        for name in expression_references(closure.operations, nested_names) {
+          if !local_names.contains(name) && !result.contains(name) {
+            result.push(name)
+          }
+        }
+      }
+      _ => ()
+    }
   }
-  let right = match resolve_expression_value(condition.right, bindings) {
-    Some(value) => value
-    None => return false
-  }
-  match condition.operator {
-    Equal => left == right
-    NotEqual => left != right
-    LessThan =>
-      match (left, right) {
-        (Number(a), Number(b)) => a < b
-        (Date(a), Date(b)) => a < b
-        _ => false
-      }
-    LessOrEqual =>
-      match (left, right) {
-        (Number(a), Number(b)) => a <= b
-        (Date(a), Date(b)) => a <= b
-        _ => false
-      }
-    GreaterThan =>
-      match (left, right) {
-        (Number(a), Number(b)) => a > b
-        (Date(a), Date(b)) => a > b
-        _ => false
-      }
-    GreaterOrEqual =>
-      match (left, right) {
-        (Number(a), Number(b)) => a >= b
-        (Date(a), Date(b)) => a >= b
-        _ => false
-      }
-  }
+  result
 }

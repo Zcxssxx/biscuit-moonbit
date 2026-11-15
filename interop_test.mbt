@@ -107,7 +107,7 @@ test "upstream v1 signature is accepted" {
 }
 
 ///|
-test "version 6 reject check is decoded without running expressions" {
+test "version 6 reject check and expression operators are decoded" {
   let programs = @biscuit.verify_block_programs(test029_reject_if, root_key)
   assert_eq(programs.length(), 1)
   assert_eq(programs[0].checks.length(), 1)
@@ -117,32 +117,139 @@ test "version 6 reject check is decoded without running expressions" {
       _ => false
     },
   )
-  assert_true(programs[0].has_unsupported_expressions)
+  assert_false(programs[0].has_unsupported_expressions)
+  assert_eq(programs[0].checks[0].queries[0].conditions.length(), 1)
   assert_false(programs[0].has_scopes)
 }
 
 ///|
-test "token authorization rejects checks with expression bytecode" {
+test "reject check evaluates its condition against ambient facts" {
+  let allow_all = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.Query::{ body: [], conditions: [], scopes: [], }],
+  }
+  @biscuit.authorize_token(
+    test029_reject_if,
+    root_key,
+    [@biscuit.parse_fact("test(false)")],
+    [],
+    [allow_all],
+    100,
+    20,
+  )
   let rejected = try {
-    @biscuit.authorize_token(test029_reject_if, root_key, [], [], [], 100, 20)
+    @biscuit.authorize_token(
+      test029_reject_if,
+      root_key,
+      [@biscuit.parse_fact("test(true)")],
+      [],
+      [allow_all],
+      100,
+      20,
+    )
     false
   } catch {
-    @biscuit.UnsupportedTokenFeature(_) => true
+    @biscuit.FailedCheck(0) => true
     _ => false
   }
   assert_true(rejected)
 }
 
 ///|
-test "unsupported third-party blocks are rejected" {
-  let accepted = try {
-    @biscuit.verify_signatures(test024_third_party, root_key)
-    true
-  } catch {
-    @biscuit.Unsupported(_) => false
-    _ => abort("expected Unsupported")
+test "official sample 024 third-party block signatures verify" {
+  @biscuit.verify_signatures(test024_third_party, root_key)
+  let blocks = @biscuit.verify_block_facts(test024_third_party, root_key)
+  assert_eq(blocks.length(), 2)
+  assert_eq(blocks[1].facts.length(), 1)
+  let programs = @biscuit.verify_block_programs(test024_third_party, root_key)
+  let external_key = programs[1].external_public_key.unwrap()
+  let fact = blocks[1].facts[0]
+  let trusted_query = @biscuit.Query::{
+    body: [
+      @biscuit.Predicate::{
+        name: fact.name,
+        terms: fact.values.map(value => @biscuit.Constant(value)),
+      },
+    ],
+    conditions: [],
+    scopes: [@biscuit.TrustPublicKey(external_key)],
   }
-  assert_false(accepted)
+  let trusted_policy = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [trusted_query],
+  }
+  @biscuit.authorize_token(
+    test024_third_party,
+    root_key,
+    [],
+    [],
+    [trusted_policy],
+    100,
+    20,
+  )
+  let untrusted_policy = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [
+      @biscuit.Query::{
+        body: trusted_query.body,
+        conditions: trusted_query.conditions,
+        scopes: [],
+      },
+    ],
+  }
+  let untrusted = try {
+    @biscuit.authorize_token(
+      test024_third_party,
+      root_key,
+      [],
+      [],
+      [untrusted_policy],
+      100,
+      20,
+    )
+    false
+  } catch {
+    @biscuit.NoMatchingPolicy => true
+    _ => false
+  }
+  assert_true(untrusted)
+}
+
+///|
+test "third-party request signing and append roundtrip" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let token = @biscuit.issue([], [], [], 5, root_seed, Bytes::make(32, b'\x4a'))
+  let block_data = @biscuit.encode_block(
+    [@biscuit.parse_fact("third_party_attestation(true)")],
+    [],
+    [],
+    5,
+  )
+  let request = @biscuit.create_third_party_request(token, root_key)
+  let external_contents = @biscuit.build_third_party_block(
+    request,
+    block_data,
+    Bytes::make(32, b'\x4b'),
+  )
+  let serialized_contents = @biscuit.serialize_third_party_block(
+    external_contents,
+  )
+  let parsed_contents = @biscuit.parse_third_party_block(serialized_contents)
+  assert_true(parsed_contents.payload == block_data)
+  let appended = @biscuit.append_serialized_third_party_block(
+    token,
+    root_key,
+    serialized_contents,
+    Bytes::make(32, b'\x4c'),
+  )
+  @biscuit.verify_signatures(appended, root_key)
+  let blocks = @biscuit.verify_block_facts(appended, root_key)
+  assert_eq(blocks.length(), 2)
+  assert_eq(blocks[1].facts.length(), 1)
+  assert_true(
+    blocks[1].facts[0] == @biscuit.parse_fact("third_party_attestation(true)"),
+  )
 }
 
 ///|

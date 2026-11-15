@@ -8,21 +8,47 @@ import {
 // Values
 pub fn append_raw(Bytes, Bytes, Bytes, Bytes) -> Bytes raise TokenError
 
+pub fn append_serialized_third_party_block(Bytes, Bytes, Bytes, Bytes) -> Bytes raise TokenError
+
+pub fn append_third_party_block(Bytes, Bytes, Bytes, Bytes, ExternalSignature) -> Bytes raise TokenError
+
 pub fn attenuate(Bytes, Bytes, Array[Check], Int32, Bytes) -> Bytes raise TokenError
+
+pub fn attenuate_block(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, Bytes) -> Bytes raise TokenError
 
 pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
 
 pub fn authorize_token(Bytes, Bytes, Array[Fact], Array[Rule], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
 
+pub fn authorize_token_with_checks(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
+
+pub fn authorize_token_with_externals(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> Unit raise AuthorizationError
+
+pub fn build_third_party_block(Bytes, Bytes, Bytes) -> ThirdPartyBlockContents raise TokenError
+
+pub fn create_third_party_request(Bytes, Bytes) -> Bytes raise TokenError
+
 pub fn derive_facts(Array[Fact], Array[Rule], Int32, Int32) -> Array[Fact] raise AuthorizationError
+
+pub fn derive_facts_with_externals(Array[Fact], Array[Rule], Int32, Int32, ExternalFunctions) -> Array[Fact] raise AuthorizationError
 
 pub fn encode_block(Array[Fact], Array[Rule], Array[Check], Int32) -> Bytes raise TokenError
 
+pub fn encode_block_with_scopes(Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32) -> Bytes raise TokenError
+
+pub fn evaluate_expression_with_externals(Array[ExpressionOp], Map[String, Value], Int32, ExternalFunctions) -> Value raise AuthorizationError
+
 pub fn evaluate_policy_set(Array[Fact], Array[Check], Array[Policy]) -> Unit raise AuthorizationError
+
+pub fn evaluate_policy_set_with_externals(Array[Fact], Array[Check], Array[Policy], ExternalFunctions) -> Unit raise AuthorizationError
+
+pub fn external_signature_payload_v1(Bytes, Bytes) -> Bytes
 
 pub fn issue(Array[Fact], Array[Rule], Array[Check], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError
+
+pub fn issue_with_scopes(Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn match_query(Predicate, Array[Fact]) -> Array[Map[String, Value]]
 
@@ -37,6 +63,14 @@ pub fn parse_query(String) -> Predicate raise TokenError
 pub fn parse_query_body(String) -> Query raise TokenError
 
 pub fn parse_rule(String) -> Rule raise TokenError
+
+pub fn parse_third_party_block(Bytes) -> ThirdPartyBlockContents raise TokenError
+
+pub fn parse_trust_scopes(String) -> Array[TrustScope] raise TokenError
+
+pub fn serialize_third_party_block(ThirdPartyBlockContents) -> Bytes
+
+pub fn sign_third_party_request(Bytes, Bytes, Bytes) -> ExternalSignature raise TokenError
 
 pub fn token_from_base64url(String) -> Bytes raise TokenError
 
@@ -62,6 +96,19 @@ pub suberror AuthorizationError {
   IterationLimit
   EmptyCheck(Int32)
   EmptyPolicy(Int32)
+  Expression(ExpressionError)
+}
+
+pub suberror ExpressionError {
+  TypeMismatch(String)
+  IntegerOverflow
+  DivisionByZero
+  UnboundVariable(String)
+  InvalidRegex(String)
+  MissingExternal(String)
+  ShadowedVariable(String)
+  MalformedProgram
+  StepLimit
 }
 
 pub suberror TokenError {
@@ -71,6 +118,39 @@ pub suberror TokenError {
 }
 
 // Types and methods
+pub(all) enum BinaryOperator {
+  LessThan
+  GreaterThan
+  LessOrEqual
+  GreaterOrEqual
+  StrictEqual
+  Contains
+  Prefix
+  Suffix
+  Regex
+  Add
+  Subtract
+  Multiply
+  Divide
+  EagerAnd
+  EagerOr
+  Intersection
+  Union
+  BitwiseAnd
+  BitwiseOr
+  BitwiseXor
+  StrictNotEqual
+  LenientEqual
+  LenientNotEqual
+  LazyAnd
+  LazyOr
+  All
+  Any
+  Get
+  ExternalBinary(String)
+  TryOr
+}
+
 pub(all) struct Check {
   mode : CheckMode
   queries : Array[Query]
@@ -82,26 +162,36 @@ pub(all) enum CheckMode {
   Reject
 }
 
-pub(all) enum CompareOperator {
-  Equal
-  NotEqual
-  LessThan
-  LessOrEqual
-  GreaterThan
-  GreaterOrEqual
-} derive(Eq)
-pub fn CompareOperator::equal(Self, Self) -> Bool
-pub fn CompareOperator::not_equal(Self, Self) -> Bool
-
 pub(all) struct Condition {
-  left : ExpressionValue
-  operator : CompareOperator
-  right : ExpressionValue
+  operations : Array[ExpressionOp]
+}
+
+pub(all) struct ExpressionClosure {
+  parameters : Array[String]
+  operations : Array[ExpressionOp]
+}
+
+pub(all) enum ExpressionOp {
+  Value(ExpressionValue)
+  Unary(UnaryOperator)
+  Binary(BinaryOperator)
+  Closure(ExpressionClosure)
 }
 
 pub(all) enum ExpressionValue {
   Literal(Value)
   Reference(String)
+}
+
+pub(all) struct ExternalFunctions {
+  unary : Map[String, (Value) -> Value raise AuthorizationError]
+  binary : Map[String, (Value, Value) -> Value raise AuthorizationError]
+}
+
+pub(all) struct ExternalSignature {
+  public_key : Bytes
+  signature : Bytes
+  encoded : Bytes
 }
 
 pub(all) struct Fact {
@@ -137,6 +227,7 @@ pub(all) struct Predicate {
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
+  scopes : Array[TrustScope]
 }
 
 pub(all) enum QueryTerm {
@@ -151,6 +242,29 @@ pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
   conditions : Array[Condition]
+  scopes : Array[TrustScope]
+}
+
+pub(all) struct ThirdPartyBlockContents {
+  payload : Bytes
+  external_signature : ExternalSignature
+}
+
+pub(all) enum TrustScope {
+  TrustAuthority
+  TrustPrevious
+  TrustPublicKey(Bytes)
+} derive(Eq, @debug.Debug)
+pub fn TrustScope::equal(Self, Self) -> Bool
+pub fn TrustScope::not_equal(Self, Self) -> Bool
+pub fn TrustScope::to_repr(Self) -> @debug.Repr
+
+pub(all) enum UnaryOperator {
+  Negate
+  Parens
+  Length
+  TypeOf
+  ExternalUnary(String)
 }
 
 pub(all) enum Value {
@@ -179,6 +293,8 @@ pub(all) struct VerifiedBlockProgram {
   index : Int32
   datalog_version : Int32
   signature : Bytes
+  external_public_key : Bytes?
+  scopes : Array[TrustScope]
   facts : Array[Fact]
   rules : Array[Rule]
   checks : Array[Check]
@@ -187,5 +303,8 @@ pub(all) struct VerifiedBlockProgram {
 }
 
 // Type aliases
+pub type BinaryExternalFn = (Value, Value) -> Value raise AuthorizationError
+
+pub type UnaryExternalFn = (Value) -> Value raise AuthorizationError
 
 // Traits

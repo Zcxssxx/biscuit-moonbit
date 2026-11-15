@@ -63,6 +63,17 @@ pub fn append_raw(
   block_data : Bytes,
   next_seed : Bytes,
 ) -> Bytes raise TokenError {
+  append_raw_with_external(token, root_key, block_data, next_seed, None)
+}
+
+///|
+fn append_raw_with_external(
+  token : Bytes,
+  root_key : Bytes,
+  block_data : Bytes,
+  next_seed : Bytes,
+  external_signature : ExternalSignature?,
+) -> Bytes raise TokenError {
   verify_signatures(token, root_key)
   if next_seed.length() != 32 {
     raise Malformed("seed must be 32 bytes")
@@ -124,6 +135,7 @@ pub fn append_raw(
     next_key,
     signature: b"",
     version: 1,
+    external_signature,
   }
   let signature = @ed25519.sign(
     secret,
@@ -135,6 +147,10 @@ pub fn append_raw(
   let block = encode_bytes_field(b'\x0a', block_data) +
     encode_bytes_field(b'\x12', key) +
     encode_bytes_field(b'\x1a', signature) +
+    (match external_signature {
+      Some(value) => encode_bytes_field(b'\x22', value.encoded)
+      None => b""
+    }) +
     b"\x28\x01"
   let new_proof = encode_bytes_field(b'\x0a', next_seed)
   let result = prefix +
@@ -144,4 +160,167 @@ pub fn append_raw(
     raise Malformed("token exceeds 1 MiB")
   }
   result
+}
+
+///|
+/// Return a v1 third-party signing request for the token's current last block.
+/// The serialized request contains the previous signature required by the spec.
+pub fn create_third_party_request(
+  token : Bytes,
+  root_key : Bytes,
+) -> Bytes raise TokenError {
+  let blocks = verify_signed_chain(token, root_key)
+  if blocks.length() == 0 {
+    raise Malformed("token contains no blocks")
+  }
+  encode_bytes_field64(26, blocks[blocks.length() - 1].signature)
+}
+
+///|
+/// Sign a block for a v1 third-party request using a 32-byte Ed25519 seed.
+pub fn sign_third_party_request(
+  request : Bytes,
+  block_data : Bytes,
+  external_seed : Bytes,
+) -> ExternalSignature raise TokenError {
+  if external_seed.length() != 32 {
+    raise Malformed("third-party seed must be 32 bytes")
+  }
+  let r = Reader::{ data: request, pos: 0, }
+  let mut previous_signature : Bytes? = None
+  while r.pos < request.length() {
+    match r.varint() {
+      10 => ignore(r.bytes())
+      18 => ignore(r.bytes())
+      26 if previous_signature is None => previous_signature = Some(r.bytes())
+      26 => raise Malformed("duplicate previous signature in request")
+      _ => raise Malformed("invalid third-party request")
+    }
+  }
+  let previous = match previous_signature {
+    Some(value) => value
+    None => raise Malformed("third-party request has no previous signature")
+  }
+  let public_key = @ed25519.derive_public_key(external_seed) catch {
+    _ => raise Malformed("invalid third-party seed")
+  }
+  let payload = external_signature_payload_v1(block_data, previous)
+  let signature = @ed25519.sign(external_seed, payload) catch {
+    _ => raise Malformed("could not create third-party signature")
+  }
+  let key_message = b"\x08\x00" + encode_bytes_field(b'\x12', public_key)
+  let encoded = encode_bytes_field(b'\x0a', signature) +
+    encode_bytes_field(b'\x12', key_message)
+  { public_key, signature, encoded, }
+}
+
+///|
+/// Create serializable third-party block contents from a signing request.
+pub fn build_third_party_block(
+  request : Bytes,
+  block_data : Bytes,
+  external_seed : Bytes,
+) -> ThirdPartyBlockContents raise TokenError {
+  {
+    payload: block_data,
+    external_signature: sign_third_party_request(
+      request, block_data, external_seed,
+    ),
+  }
+}
+
+///|
+/// Serialize ThirdPartyBlockContents using the official protobuf schema.
+pub fn serialize_third_party_block(contents : ThirdPartyBlockContents) -> Bytes {
+  encode_bytes_field64(10, contents.payload) +
+  encode_bytes_field64(18, contents.external_signature.encoded)
+}
+
+///|
+/// Parse a serialized ThirdPartyBlockContents response from a remote signer.
+pub fn parse_third_party_block(
+  data : Bytes,
+) -> ThirdPartyBlockContents raise TokenError {
+  let r = Reader::{ data, pos: 0, }
+  let mut payload : Bytes? = None
+  let mut external_signature : ExternalSignature? = None
+  while r.pos < data.length() {
+    match r.varint() {
+      10 if payload is None => payload = Some(r.bytes())
+      18 if external_signature is None =>
+        external_signature = Some(parse_external_signature(r.bytes()))
+      10 | 18 => raise Malformed("duplicate third-party block field")
+      _ => raise Unsupported("unknown third-party block field")
+    }
+  }
+  match (payload, external_signature) {
+    (Some(block), Some(signature)) =>
+      { payload: block, external_signature: signature, }
+    _ => raise Malformed("incomplete third-party block contents")
+  }
+}
+
+///|
+/// Append a block signed by an external Ed25519 authority.
+pub fn append_third_party_block(
+  token : Bytes,
+  root_key : Bytes,
+  block_data : Bytes,
+  next_seed : Bytes,
+  external_signature : ExternalSignature,
+) -> Bytes raise TokenError {
+  let blocks = verify_signed_chain(token, root_key)
+  if blocks.length() == 0 {
+    raise Malformed("token contains no blocks")
+  }
+  let previous = blocks[blocks.length() - 1].signature
+  if !@ed25519.verify(
+      external_signature.public_key,
+      external_signature_payload_v1(block_data, previous),
+      external_signature.signature,
+    ) {
+    raise InvalidSignature
+  }
+  let encoded_signature = encode_bytes_field(
+      b'\x0a',
+      external_signature.signature,
+    ) +
+    encode_bytes_field(
+      b'\x12',
+      b"\x08\x00" + encode_bytes_field(b'\x12', external_signature.public_key),
+    )
+  let canonical = {
+    public_key: external_signature.public_key,
+    signature: external_signature.signature,
+    encoded: encoded_signature,
+  }
+  let datalog = parse_encoded_fact_block(block_data)
+  if datalog.version < 5 {
+    raise Unsupported("third-party blocks require Datalog version 3.2")
+  }
+  append_raw_with_external(
+    token,
+    root_key,
+    block_data,
+    next_seed,
+    Some(canonical),
+  )
+}
+
+///|
+/// Append a serialized block returned by an external third-party signer.
+pub fn append_serialized_third_party_block(
+  token : Bytes,
+  root_key : Bytes,
+  contents : Bytes,
+  next_seed : Bytes,
+) -> Bytes raise TokenError {
+  let parsed = parse_third_party_block(contents)
+  append_third_party_block(
+    token,
+    root_key,
+    parsed.payload,
+    next_seed,
+    parsed.external_signature,
+  )
 }

@@ -1,4 +1,169 @@
 ///|
+fn expression_query_matches(
+  source : String,
+  facts : Array[@biscuit.Fact],
+) -> Bool {
+  try {
+    @biscuit.evaluate_policy_set(facts, [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [@biscuit.parse_query_body(source)],
+      },
+    ])
+    true
+  } catch {
+    @biscuit.NoMatchingPolicy => false
+    _ => false
+  }
+}
+
+///|
+test "Datalog expressions implement arithmetic precedence and errors" {
+  let facts = [@biscuit.parse_fact("number(2)")]
+  assert_true(expression_query_matches("number($n), $n + 3 * 4 == 14", facts))
+  assert_true(expression_query_matches("number($n), ($n + 3) * 4 == 20", facts))
+  assert_true(expression_query_matches("number($n), $n * 3 / 2 == 3", facts))
+  assert_true(expression_query_matches("number($n), $n - 1 == 1", facts))
+  assert_true(expression_query_matches("1 | 2 ^ 3 === 0", []))
+
+  let overflow = try {
+    @biscuit.evaluate_policy_set(
+      [@biscuit.parse_fact("number(9223372036854775807)")],
+      [],
+      [
+        @biscuit.Policy::{
+          kind: @biscuit.Allow,
+          queries: [@biscuit.parse_query_body("number($n), $n + 1 == 0")],
+        },
+      ],
+    )
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.IntegerOverflow) => true
+    _ => false
+  }
+  assert_true(overflow)
+
+  let divide_by_zero = try {
+    @biscuit.evaluate_policy_set(facts, [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [@biscuit.parse_query_body("number($n), $n / 0 == 0")],
+      },
+    ])
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.DivisionByZero) => true
+    _ => false
+  }
+  assert_true(divide_by_zero)
+}
+
+///|
+test "Datalog expressions implement values strings sets arrays and maps" {
+  let facts = [
+    @biscuit.parse_fact("word(\"biscuit\")"),
+    @biscuit.parse_fact("roles({\"read\", \"write\"})"),
+    @biscuit.parse_fact("items([1, 2, 3])"),
+    @biscuit.parse_fact("config({\"mode\": \"read\", 1: true})"),
+    @biscuit.parse_fact("payload(hex:00a1ff)"),
+  ]
+  assert_true(
+    expression_query_matches(
+      "word($s), $s.starts_with(\"bi\"), $s.ends_with(\"it\"), $s.contains(\"scu\"), $s.matches(\"^b.*t$\"), $s.length() == 7, $s.type() == \"string\"",
+      facts,
+    ),
+  )
+  assert_true(
+    expression_query_matches(
+      "roles($r), $r.intersection({\"read\", \"admin\"}) == {\"read\"}, $r.union({\"admin\"}) == {\"read\", \"write\", \"admin\"}, $r.contains(\"write\")",
+      facts,
+    ),
+  )
+  assert_true(expression_query_matches("items($a), $a.get(0) == 1", facts))
+  assert_true(expression_query_matches("items($a), $a.contains(3)", facts))
+  assert_true(
+    expression_query_matches("items($a), $a.starts_with([1, 2])", facts),
+  )
+  assert_true(expression_query_matches("items($a), $a.ends_with([3])", facts))
+  assert_true(expression_query_matches("items($a), $a.length() == 3", facts))
+  assert_true(
+    expression_query_matches("items($a), $a.type() == \"array\"", facts),
+  )
+  assert_true(
+    expression_query_matches(
+      "config($m), $m.get(\"mode\") == \"read\", $m.get(9) === null, $m.contains(1), $m.length() == 2, $m.type() == \"map\"",
+      facts,
+    ),
+  )
+  assert_true(
+    expression_query_matches(
+      "payload($b), $b.length() == 3, $b.type() == \"bytes\"", facts,
+    ),
+  )
+}
+
+///|
+test "Datalog expressions implement closures short circuit and try_or" {
+  let facts = [
+    @biscuit.parse_fact("items([1, 2, 3])"),
+    @biscuit.parse_fact("config({\"mode\": \"read\", 1: true})"),
+  ]
+  assert_true(
+    expression_query_matches(
+      "items($a), $a.any($x -> $x == 2), $a.all($x -> $x > 0)", facts,
+    ),
+  )
+  assert_true(
+    expression_query_matches(
+      "config($m), $m.any($entry -> $entry.get(0) == \"mode\" && $entry.get(1) == \"read\")",
+      facts,
+    ),
+  )
+  assert_true(expression_query_matches("true || (1 / 0 == 0)", []))
+  assert_false(expression_query_matches("false && (1 / 0 == 0)", []))
+  assert_true(expression_query_matches("(1 / 0).try_or(42) == 42", []))
+  assert_false(expression_query_matches("1 == \"one\"", []))
+
+  let strict_mismatch = try {
+    @biscuit.evaluate_policy_set([], [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [@biscuit.parse_query_body("1 === \"one\"")],
+      },
+    ])
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.TypeMismatch(_)) => true
+    _ => false
+  }
+  assert_true(strict_mismatch)
+
+  let bad_regex = try {
+    @biscuit.evaluate_policy_set([], [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [@biscuit.parse_query_body("\"text\".matches(\"[\")")],
+      },
+    ])
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.InvalidRegex(_)) => true
+    _ => false
+  }
+  assert_true(bad_regex)
+}
+
+///|
+test "Datalog date offsets denote the same UTC instant" {
+  assert_true(
+    expression_query_matches("clock($time), $time === 2025-01-01T00:00:00Z", [
+      @biscuit.parse_fact("clock(2025-01-01T08:00:00+08:00)"),
+    ]),
+  )
+}
+
+///|
 test "parse common authorization fact values" {
   let fact = @biscuit.parse_fact("permit(\"文档/一\", -12, true, null)")
   assert_eq(fact.name, "permit")
@@ -144,7 +309,6 @@ test "comparison operators cover inclusive boundaries and type mismatches" {
       ("score($n), $n >= 6", false),
       ("score($n), $n == 4", false),
       ("score($n), $n != 5", false),
-      ("score($n), $n >= \"5\"", false),
     ] {
     let matched = try {
       @biscuit.evaluate_policy_set(facts, [], [
@@ -160,6 +324,19 @@ test "comparison operators cover inclusive boundaries and type mismatches" {
     }
     assert_eq(matched, expected)
   }
+  let type_error = try {
+    @biscuit.evaluate_policy_set(facts, [], [
+      @biscuit.Policy::{
+        kind: @biscuit.Allow,
+        queries: [@biscuit.parse_query_body("score($n), $n >= \"5\"")],
+      },
+    ])
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.TypeMismatch(_)) => true
+    _ => false
+  }
+  assert_true(type_error)
 }
 
 ///|
@@ -171,11 +348,14 @@ test "date ordering is supported while mixed type ordering fails closed" {
     ],
     conditions: [
       @biscuit.Condition::{
-        left: @biscuit.Reference("when"),
-        operator: @biscuit.LessThan,
-        right: @biscuit.Literal(@biscuit.Date(101)),
+        operations: [
+          @biscuit.Value(@biscuit.Reference("when")),
+          @biscuit.Value(@biscuit.Literal(@biscuit.Date(101))),
+          @biscuit.Binary(@biscuit.LessThan),
+        ],
       },
     ],
+    scopes: [],
   }
   @biscuit.evaluate_policy_set(facts, [], [
     @biscuit.Policy::{ kind: @biscuit.Allow, queries: [date_query], },
@@ -184,22 +364,25 @@ test "date ordering is supported while mixed type ordering fails closed" {
     body: date_query.body,
     conditions: [
       @biscuit.Condition::{
-        left: @biscuit.Reference("when"),
-        operator: @biscuit.LessThan,
-        right: @biscuit.Literal(@biscuit.Number(101)),
+        operations: [
+          @biscuit.Value(@biscuit.Reference("when")),
+          @biscuit.Value(@biscuit.Literal(@biscuit.Number(101))),
+          @biscuit.Binary(@biscuit.LessThan),
+        ],
       },
     ],
+    scopes: [],
   }
-  let matched = try {
+  let type_error = try {
     @biscuit.evaluate_policy_set(facts, [], [
       @biscuit.Policy::{ kind: @biscuit.Allow, queries: [mixed_query], },
     ])
-    true
+    false
   } catch {
-    @biscuit.NoMatchingPolicy => false
-    _ => abort("unexpected mixed-type comparison error")
+    @biscuit.Expression(@biscuit.TypeMismatch(_)) => true
+    _ => false
   }
-  assert_false(matched)
+  assert_true(type_error)
 }
 
 ///|
@@ -337,6 +520,49 @@ test "all checks validate every matching binding and reject checks invert a matc
 }
 
 ///|
+test "reject if fails when any alternative query matches" {
+  let facts = [@biscuit.parse_fact("present(\"yes\")")]
+  let mixed_queries = [
+    @biscuit.parse_query_body("present(\"yes\")"),
+    @biscuit.parse_query_body("absent(\"no\")"),
+  ]
+  let rejected = try {
+    @biscuit.evaluate_policy_set(
+      facts,
+      [@biscuit.Check::{ mode: @biscuit.Reject, queries: mixed_queries, }],
+      [],
+    )
+    false
+  } catch {
+    @biscuit.FailedCheck(0) => true
+    _ => false
+  }
+  assert_true(rejected)
+
+  let all_unmatched = try {
+    @biscuit.evaluate_policy_set(
+      facts,
+      [
+        @biscuit.Check::{
+          mode: @biscuit.Reject,
+          queries: [
+            @biscuit.parse_query_body("absent(\"one\")"),
+            @biscuit.parse_query_body("absent(\"two\")"),
+          ],
+        },
+      ],
+      [],
+    )
+    false
+  } catch {
+    // Reaching policy evaluation proves the reject check passed.
+    @biscuit.NoMatchingPolicy => true
+    _ => false
+  }
+  assert_true(all_unmatched)
+}
+
+///|
 test "a missing check or unmatched policy denies by default" {
   let facts = [@biscuit.parse_fact("user(\"alice\")")]
   let check = @biscuit.Check::{
@@ -460,4 +686,82 @@ test "check and policy query predicates join through shared variables" {
       _ => true
     },
   )
+}
+
+///|
+test "registered external functions run in expressions policies and rules" {
+  let externals = @biscuit.ExternalFunctions::{
+    unary: Map([
+      (
+        "positive",
+        fn(value) {
+          match value {
+            @biscuit.Number(number) => @biscuit.Boolean(number > 0L)
+            _ => @biscuit.Boolean(false)
+          }
+        },
+      ),
+      (
+        "even",
+        fn(value) {
+          match value {
+            @biscuit.Number(number) => @biscuit.Boolean(number % 2L == 0L)
+            _ => @biscuit.Boolean(false)
+          }
+        },
+      ),
+    ]),
+    binary: Map([
+      (
+        "at_least",
+        fn(left, right) {
+          match (left, right) {
+            (@biscuit.Number(a), @biscuit.Number(b)) => @biscuit.Boolean(a >= b)
+            _ => @biscuit.Boolean(false)
+          }
+        },
+      ),
+    ]),
+  }
+  let facts = [@biscuit.parse_fact("score(8)")]
+  let positive = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.parse_query_body("score($n), $n.extern::positive()")],
+  }
+  @biscuit.evaluate_policy_set_with_externals(facts, [], [positive], externals)
+
+  let at_least_six = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.parse_query_body("score($n), $n.extern::at_least(6)")],
+  }
+  @biscuit.evaluate_policy_set_with_externals(
+    facts,
+    [],
+    [at_least_six],
+    externals,
+  )
+
+  let rule = @biscuit.parse_rule(
+    "even_score($n) <- score($n), $n.extern::even()",
+  )
+  let derived = @biscuit.derive_facts_with_externals(
+    facts,
+    [rule],
+    100,
+    10,
+    externals,
+  )
+  assert_eq(
+    @biscuit.match_query(@biscuit.parse_query("even_score(8)"), derived).length(),
+    1,
+  )
+
+  let missing = try {
+    @biscuit.evaluate_policy_set(facts, [], [positive])
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.MissingExternal("positive")) => true
+    _ => false
+  }
+  assert_true(missing)
 }

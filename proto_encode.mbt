@@ -2,6 +2,8 @@
 priv struct EncoderSymbols {
   indices : Map[String, UInt64]
   custom : Array[String]
+  public_keys : Array[Bytes]
+  public_key_indices : Map[String, UInt64]
   mut offset : UInt64
 }
 
@@ -17,7 +19,37 @@ fn EncoderSymbols::new() -> EncoderSymbols {
   for i = 0; i < defaults.length(); i = i + 1 {
     indices[defaults[i]] = i.to_uint64()
   }
-  { indices, custom: [], offset: 0UL, }
+  {
+    indices,
+    custom: [],
+    public_keys: [],
+    public_key_indices: Map([]),
+    offset: 0UL,
+  }
+}
+
+///|
+fn EncoderSymbols::intern_public_key(
+  self : EncoderSymbols,
+  key : Bytes,
+) -> UInt64 raise TokenError {
+  if key.length() != 32 {
+    raise Malformed("scope Ed25519 public key must be 32 bytes")
+  }
+  let identity = @hex.encode(key)
+  match self.public_key_indices.get(identity) {
+    Some(index) => index
+    None => {
+      if self.public_keys.length() >= 1024 {
+        raise Malformed("block public key table exceeds 1024 entries")
+      }
+      let index = self.public_keys.length().to_uint64()
+      let encoded = b"\x08\x00" + encode_bytes_field64(18, key)
+      self.public_keys.push(encoded)
+      self.public_key_indices[identity] = index
+      index
+    }
+  }
 }
 
 ///|
@@ -123,10 +155,8 @@ fn validate_value_version(
     raise Malformed("term nesting exceeds 16 levels")
   }
   match value {
-    Null | ArrayValue(_) | SetValue(_) | MapValue(_) if version < 6 =>
-      raise Unsupported(
-        "null, collections and maps require Datalog version 3.3",
-      )
+    Null | ArrayValue(_) | MapValue(_) if version < 6 =>
+      raise Unsupported("null, arrays and maps require Datalog version 3.3")
     ArrayValue(values) | SetValue(values) =>
       for item in values {
         validate_value_version(item, version, depth + 1)
@@ -273,11 +303,9 @@ fn validate_rule(rule : Rule) -> Unit raise TokenError {
     }
   }
   for condition in rule.conditions {
-    for operand in [condition.left, condition.right] {
-      match operand {
-        Reference(name) if !bound.contains(name) =>
-          raise Malformed("rule expression references an unbound variable")
-        _ => ()
+    for name in condition_references(condition) {
+      if !bound.contains(name) {
+        raise Malformed("rule expression references an unbound variable")
       }
     }
   }
@@ -293,8 +321,112 @@ fn encode_expression_value(
     Literal(value) => encode_term(value, symbols, version, 0)
     Reference(name) => encode_varint_field(8, symbols.intern(name))
   }
-  let operand = encode_bytes_field64(10, term)
-  encode_bytes_field64(10, operand)
+  encode_bytes_field64(10, term)
+}
+
+///|
+fn encode_expression_op(
+  operation : ExpressionOp,
+  symbols : EncoderSymbols,
+  version : Int32,
+) -> Bytes raise TokenError {
+  match operation {
+    Value(value) => encode_expression_value(value, symbols, version)
+    Unary(operator) => {
+      let (kind, name) = match operator {
+        Negate => (0, None)
+        Parens => (1, None)
+        Length => (2, None)
+        TypeOf if version >= 6 => (3, None)
+        TypeOf => raise Unsupported("typeof requires Datalog version 3.3")
+        ExternalUnary(name) if version >= 6 => (4, Some(name))
+        ExternalUnary(_) =>
+          raise Unsupported("external calls require Datalog version 3.3")
+      }
+      let content : Array[Byte] = []
+      extend_bytes(content, encode_varint_field(8, kind.to_uint64()))
+      match name {
+        Some(value) =>
+          extend_bytes(content, encode_varint_field(16, symbols.intern(value)))
+        None => ()
+      }
+      encode_bytes_field64(18, Bytes::from_array(content))
+    }
+    Binary(operator) => {
+      let (kind, name) = match operator {
+        LessThan => (0, None)
+        GreaterThan => (1, None)
+        LessOrEqual => (2, None)
+        GreaterOrEqual => (3, None)
+        StrictEqual => (4, None)
+        Contains => (5, None)
+        Prefix => (6, None)
+        Suffix => (7, None)
+        Regex => (8, None)
+        Add => (9, None)
+        Subtract => (10, None)
+        Multiply => (11, None)
+        Divide => (12, None)
+        EagerAnd => (13, None)
+        EagerOr => (14, None)
+        Intersection => (15, None)
+        Union => (16, None)
+        BitwiseAnd if version >= 4 => (17, None)
+        BitwiseOr if version >= 4 => (18, None)
+        BitwiseXor if version >= 4 => (19, None)
+        BitwiseAnd | BitwiseOr | BitwiseXor =>
+          raise Unsupported("bitwise operators require Datalog version 3.1")
+        StrictNotEqual if version >= 4 => (20, None)
+        StrictNotEqual =>
+          raise Unsupported("strict not-equal requires Datalog version 3.1")
+        LenientEqual if version >= 6 => (21, None)
+        LenientNotEqual if version >= 6 => (22, None)
+        LenientEqual | LenientNotEqual =>
+          raise Unsupported("lenient equality requires Datalog version 3.3")
+        LazyAnd if version >= 6 => (23, None)
+        LazyOr if version >= 6 => (24, None)
+        LazyAnd | LazyOr =>
+          raise Unsupported(
+            "short-circuit operators require Datalog version 3.3",
+          )
+        All if version >= 6 => (25, None)
+        Any if version >= 6 => (26, None)
+        All | Any =>
+          raise Unsupported("array operators require Datalog version 3.3")
+        Get if version >= 6 => (27, None)
+        Get => raise Unsupported("get requires Datalog version 3.3")
+        ExternalBinary(name) if version >= 6 => (28, Some(name))
+        ExternalBinary(_) =>
+          raise Unsupported("external calls require Datalog version 3.3")
+        TryOr if version >= 6 => (29, None)
+        TryOr => raise Unsupported("try requires Datalog version 3.3")
+      }
+      let content : Array[Byte] = []
+      extend_bytes(content, encode_varint_field(8, kind.to_uint64()))
+      match name {
+        Some(value) =>
+          extend_bytes(content, encode_varint_field(18, symbols.intern(value)))
+        None => ()
+      }
+      encode_bytes_field64(26, Bytes::from_array(content))
+    }
+    Closure(closure) => {
+      let content : Array[Byte] = []
+      for parameter in closure.parameters {
+        extend_bytes(content, encode_varint_field(8, symbols.intern(parameter)))
+      }
+      for nested in closure.operations {
+        extend_bytes(
+          content,
+          encode_bytes_field64(
+            18,
+            encode_expression_op(nested, symbols, version),
+          ),
+        )
+      }
+      encode_bytes_field64(34, Bytes::from_array(content))
+    }
+  }
 }
 
 ///|
@@ -303,20 +435,30 @@ fn encode_condition(
   symbols : EncoderSymbols,
   version : Int32,
 ) -> Bytes raise TokenError {
-  let operator = match condition.operator {
-    LessThan => 0
-    GreaterThan => 1
-    LessOrEqual => 2
-    GreaterOrEqual => 3
-    Equal => 4
-    NotEqual if version >= 4 => 20
-    NotEqual => raise Unsupported("not-equal requires Datalog version 3.1")
+  let content : Array[Byte] = []
+  for operation in condition.operations {
+    extend_bytes(
+      content,
+      encode_bytes_field64(
+        10,
+        encode_expression_op(operation, symbols, version),
+      ),
+    )
   }
-  let binary = encode_varint_field(8, operator.to_uint64())
-  let content = encode_expression_value(condition.left, symbols, version) +
-    encode_expression_value(condition.right, symbols, version) +
-    encode_bytes_field64(10, encode_bytes_field64(26, binary))
-  encode_bytes_field64(26, content)
+  encode_bytes_field64(26, Bytes::from_array(content))
+}
+
+///|
+fn encode_scope(
+  scope : TrustScope,
+  symbols : EncoderSymbols,
+) -> Bytes raise TokenError {
+  match scope {
+    TrustAuthority => encode_varint_field(8, 0UL)
+    TrustPrevious => encode_varint_field(8, 1UL)
+    TrustPublicKey(key) =>
+      encode_varint_field(16, symbols.intern_public_key(key))
+  }
 }
 
 ///|
@@ -339,6 +481,12 @@ fn encode_rule(
   }
   for condition in rule.conditions {
     extend_bytes(content, encode_condition(condition, symbols, version))
+  }
+  for scope in rule.scopes {
+    extend_bytes(
+      content,
+      encode_bytes_field64(34, encode_scope(scope, symbols)),
+    )
   }
   Bytes::from_array(content)
 }
@@ -374,14 +522,18 @@ fn encode_query_rule(
     }
   }
   for condition in query.conditions {
-    for operand in [condition.left, condition.right] {
-      match operand {
-        Reference(name) if !bound.contains(name) =>
-          raise Malformed("check expression references an unbound variable")
-        _ => ()
+    for name in condition_references(condition) {
+      if !bound.contains(name) {
+        raise Malformed("check expression references an unbound variable")
       }
     }
     extend_bytes(content, encode_condition(condition, symbols, version))
+  }
+  for scope in query.scopes {
+    extend_bytes(
+      content,
+      encode_bytes_field64(34, encode_scope(scope, symbols)),
+    )
   }
   Bytes::from_array(content)
 }
@@ -423,6 +575,25 @@ fn encode_block_with_symbols(
   version : Int32,
   existing_symbols : Array[String],
 ) -> Bytes raise TokenError {
+  encode_block_with_symbols_and_scopes(
+    facts,
+    rules,
+    checks,
+    version,
+    existing_symbols,
+    [],
+  )
+}
+
+///|
+fn encode_block_with_symbols_and_scopes(
+  facts : Array[Fact],
+  rules : Array[Rule],
+  checks : Array[Check],
+  version : Int32,
+  existing_symbols : Array[String],
+  block_scopes : Array[TrustScope],
+) -> Bytes raise TokenError {
   if version < 3 || version > 6 {
     raise Unsupported("Datalog version outside the supported v3.0-v3.3 range")
   }
@@ -456,6 +627,15 @@ fn encode_block_with_symbols(
   for check in encoded_checks {
     extend_bytes(content, check)
   }
+  for scope in block_scopes {
+    extend_bytes(
+      content,
+      encode_bytes_field64(58, encode_scope(scope, symbols)),
+    )
+  }
+  for public_key in symbols.public_keys {
+    extend_bytes(content, encode_bytes_field64(66, public_key))
+  }
   let block = Bytes::from_array(content)
   if block.length() > 1048000 {
     raise Malformed("encoded block exceeds 1 MiB")
@@ -475,6 +655,25 @@ pub fn encode_block(
 }
 
 ///|
+/// Serialize a v3 block with block-level trusted-origin scope annotations.
+pub fn encode_block_with_scopes(
+  facts : Array[Fact],
+  rules : Array[Rule],
+  checks : Array[Check],
+  block_scopes : Array[TrustScope],
+  version : Int32,
+) -> Bytes raise TokenError {
+  encode_block_with_symbols_and_scopes(
+    facts,
+    rules,
+    checks,
+    version,
+    [],
+    block_scopes,
+  )
+}
+
+///|
 /// Create a token from structured Datalog data and caller-supplied seeds.
 /// Seeds must be independent, fresh, cryptographically random 32-byte values.
 pub fn issue(
@@ -486,6 +685,24 @@ pub fn issue(
   next_seed : Bytes,
 ) -> Bytes raise TokenError {
   issue_raw(encode_block(facts, rules, checks, version), root_seed, next_seed)
+}
+
+///|
+/// Create a v3 token with block-level trust scopes in its authority block.
+pub fn issue_with_scopes(
+  facts : Array[Fact],
+  rules : Array[Rule],
+  checks : Array[Check],
+  block_scopes : Array[TrustScope],
+  version : Int32,
+  root_seed : Bytes,
+  next_seed : Bytes,
+) -> Bytes raise TokenError {
+  issue_raw(
+    encode_block_with_scopes(facts, rules, checks, block_scopes, version),
+    root_seed,
+    next_seed,
+  )
 }
 
 ///|
@@ -521,4 +738,37 @@ pub fn attenuate(
     encode_block_with_symbols([], [], checks, version, existing_symbols),
     next_seed,
   )
+}
+
+///|
+/// Append a Datalog block containing facts, rules, checks and optional scope
+/// annotations. Rules and checks are evaluated under their block or rule scope.
+pub fn attenuate_block(
+  token : Bytes,
+  root_key : Bytes,
+  facts : Array[Fact],
+  rules : Array[Rule],
+  checks : Array[Check],
+  block_scopes : Array[TrustScope],
+  version : Int32,
+  next_seed : Bytes,
+) -> Bytes raise TokenError {
+  let signed = verify_signed_chain(token, root_key)
+  let existing_symbols : Array[String] = []
+  for block in signed {
+    let encoded = parse_encoded_fact_block(block.data)
+    for symbol in encoded.symbols {
+      let value = @utf8.decode(symbol) catch {
+        _ => raise Malformed("invalid UTF-8 symbol")
+      }
+      if existing_symbols.contains(value) {
+        raise Malformed("duplicate symbol in existing token")
+      }
+      existing_symbols.push(value)
+    }
+  }
+  let block_data = encode_block_with_symbols_and_scopes(
+    facts, rules, checks, version, existing_symbols, block_scopes,
+  )
+  append_raw(token, root_key, block_data, next_seed)
 }

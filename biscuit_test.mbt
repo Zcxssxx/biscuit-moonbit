@@ -43,7 +43,7 @@ test "verified authority facts decode map keys and values" {
 }
 
 ///|
-test "authorize simple tokens and checks while rejecting appended rights" {
+test "authorizer scope excludes facts added by an attenuation block" {
   let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
   let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
   let predicate = b"\x08\x04\x12\x03\x18\x80\x08\x12\x02\x18\x00"
@@ -65,39 +65,180 @@ test "authorize simple tokens and checks while rejecting appended rights" {
   )
   @biscuit.authorize_token(attenuated, root_key, [], [], [policy], 100, 20)
 
-  let escalated = @biscuit.append_raw(
+  let file2_fact = @biscuit.parse_fact("right(\"file2\", \"read\")")
+  let file2_check = @biscuit.parse_check_body(
+    "right(\"file2\", \"read\")",
+    @biscuit.Any,
+  )
+  let escalated = @biscuit.attenuate_block(
     token,
     root_key,
-    b"\x18\x06" + fact,
+    [file2_fact],
+    [],
+    [file2_check],
+    [],
+    6,
     Bytes::make(32, b'\x48'),
   )
-  let accepted = try {
-    @biscuit.authorize_token(escalated, root_key, [], [], [policy], 100, 20)
-    true
-  } catch {
-    @biscuit.UnsupportedTokenFeature(_) => false
-    _ => abort("expected appended rights to be rejected")
+  let file2_policy = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.parse_query_body("right(\"file2\", \"read\")")],
   }
-  assert_false(accepted)
+  let accepted = try {
+    @biscuit.authorize_token(
+      escalated,
+      root_key,
+      [],
+      [],
+      [file2_policy],
+      100,
+      20,
+    )
+    false
+  } catch {
+    @biscuit.NoMatchingPolicy => true
+    _ => false
+  }
+  assert_true(accepted)
 }
 
 ///|
-test "token authorization rejects explicit scope annotations" {
+test "attenuation block facts and rules honor trusting previous" {
   let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
   let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
-  let token = @biscuit.issue_raw(
-    b"\x18\x04\x3a\x02\x08\x00",
+  let token = @biscuit.issue([], [], [], 6, root_seed, Bytes::make(32, b'\x4d'))
+  let with_fact = @biscuit.attenuate_block(
+    token,
+    root_key,
+    [@biscuit.parse_fact("local(true)")],
+    [],
+    [],
+    [],
+    6,
+    Bytes::make(32, b'\x4e'),
+  )
+  let previous_rule = @biscuit.parse_rule(
+    "derived($value) <- local($value) trusting previous",
+  )
+  let previous_check = @biscuit.parse_check_body(
+    "derived(true) trusting previous",
+    @biscuit.Any,
+  )
+  let with_rule = @biscuit.attenuate_block(
+    with_fact,
+    root_key,
+    [],
+    [previous_rule],
+    [previous_check],
+    [],
+    6,
+    Bytes::make(32, b'\x4f'),
+  )
+  let allow_context = @biscuit.parse_policy_body("true", @biscuit.Allow)
+  @biscuit.authorize_token(
+    with_rule,
+    root_key,
+    [],
+    [],
+    [allow_context],
+    100,
+    20,
+  )
+
+  let without_previous = @biscuit.parse_rule(
+    "isolated($value) <- local($value)",
+  )
+  let blocked_check = @biscuit.parse_check_body("local(true)", @biscuit.Any)
+  let restricted = @biscuit.attenuate_block(
+    with_fact,
+    root_key,
+    [],
+    [without_previous],
+    [blocked_check],
+    [],
+    6,
+    Bytes::make(32, b'\x50'),
+  )
+  let denied = try {
+    @biscuit.authorize_token(
+      restricted,
+      root_key,
+      [],
+      [],
+      [allow_context],
+      100,
+      20,
+    )
+    false
+  } catch {
+    @biscuit.FailedCheck(0) => true
+    _ => false
+  }
+  assert_true(denied)
+}
+
+///|
+test "scope annotations parse encode and decode with Ed25519 key tables" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let rule = @biscuit.parse_rule(
+    "trusted($x) <- attested($x) trusting ed25519/d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  )
+  assert_eq(rule.scopes, [@biscuit.TrustPublicKey(root_key)])
+  let token = @biscuit.issue_with_scopes(
+    [],
+    [rule],
+    [
+      @biscuit.parse_check_body(
+        "attested(true) trusting previous",
+        @biscuit.Any,
+      ),
+    ],
+    [@biscuit.TrustAuthority],
+    6,
     root_seed,
     Bytes::make(32, b'\x49'),
   )
-  let rejected = try {
-    @biscuit.authorize_token(token, root_key, [], [], [], 100, 20)
-    false
-  } catch {
-    @biscuit.UnsupportedTokenFeature(_) => true
-    _ => false
+  let programs = @biscuit.verify_block_programs(token, root_key)
+  assert_eq(programs[0].scopes, [@biscuit.TrustAuthority])
+  assert_eq(programs[0].rules[0].scopes, [@biscuit.TrustPublicKey(root_key)])
+  assert_eq(programs[0].checks[0].queries[0].scopes, [@biscuit.TrustPrevious])
+}
+
+///|
+test "authorizer FFI callbacks evaluate external policy expressions" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let token = @biscuit.issue([], [], [], 6, root_seed, Bytes::make(32, b'\x51'))
+  let externals = @biscuit.ExternalFunctions::{
+    unary: Map([
+      (
+        "approved",
+        fn(value) {
+          match value {
+            @biscuit.Text("ok") => @biscuit.Boolean(true)
+            _ => @biscuit.Boolean(false)
+          }
+        },
+      ),
+    ]),
+    binary: Map([]),
   }
-  assert_true(rejected)
+  let policy = @biscuit.Policy::{
+    kind: @biscuit.Allow,
+    queries: [@biscuit.parse_query_body("status($s), $s.extern::approved()")],
+  }
+  @biscuit.authorize_token_with_externals(
+    token,
+    root_key,
+    [@biscuit.parse_fact("status(\"ok\")")],
+    [],
+    [],
+    [policy],
+    100,
+    20,
+    externals,
+  )
 }
 
 ///|
@@ -248,6 +389,7 @@ test "structured encoder rejects unsafe rules and unsupported versions" {
     },
     body: [],
     conditions: [],
+    scopes: [],
   }
   let unsafe_rejected = try {
     ignore(@biscuit.encode_block([], [unsafe_rule], [], 6))
