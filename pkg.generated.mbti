@@ -68,6 +68,8 @@ pub fn parse_third_party_block(Bytes) -> ThirdPartyBlockContents raise TokenErro
 
 pub fn parse_trust_scopes(String) -> Array[TrustScope] raise TokenError
 
+pub fn seal_token(Bytes, Bytes) -> Bytes raise TokenError
+
 pub fn serialize_third_party_block(ThirdPartyBlockContents) -> Bytes
 
 pub fn sign_third_party_request(Bytes, Bytes, Bytes) -> ExternalSignature raise TokenError

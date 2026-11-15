@@ -133,6 +133,22 @@ def main() -> None:
         "true",
         "ALLOW",
     )
+    assert_parity(
+        "biscuit-rust sealed token",
+        rust_tokens["RUST_SEALED"],
+        rust_root,
+        "attenuated(true)",
+        "ALLOW",
+    )
+
+    moonbit_sealed = run(["moon", "run", "--target", "native", "examples/seal"])
+    assert_parity(
+        "MoonBit sealed token accepted by biscuit-rust",
+        moonbit_sealed,
+        ROOT_PUBLIC_KEY,
+        "interop_allow(true)",
+        "ALLOW",
+    )
 
     env = os.environ.copy()
     env.update(

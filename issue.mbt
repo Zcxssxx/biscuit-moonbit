@@ -53,6 +53,59 @@ pub fn issue_raw(
 }
 
 ///|
+/// Seal an unsealed token so its holder can no longer append attenuation
+/// blocks. The token's proof secret is replaced by a signature over the final
+/// block, matching the Biscuit v3 Ed25519 proof format.
+pub fn seal_token(token : Bytes, root_key : Bytes) -> Bytes raise TokenError {
+  let blocks = verify_signed_chain(token, root_key)
+  if blocks.length() == 0 {
+    raise Malformed("token contains no blocks")
+  }
+
+  let reader = Reader::{ data: token, pos: 0, }
+  let mut prefix = b""
+  let mut encoded_proof : Bytes? = None
+  while reader.pos < token.length() {
+    let start = reader.pos
+    let tag = reader.varint()
+    match tag {
+      8 => ignore(reader.varint())
+      18 | 26 => ignore(reader.bytes())
+      34 if encoded_proof is None => encoded_proof = Some(reader.bytes())
+      _ => raise Malformed("invalid token proof layout")
+    }
+    if tag != 34 {
+      prefix = prefix + token[start:reader.pos].to_owned()
+    }
+  }
+
+  let proof = match encoded_proof {
+    Some(value) => value
+    None => raise Malformed("missing proof")
+  }
+  let proof_reader = Reader::{ data: proof, pos: 0, }
+  if proof_reader.varint() != 10 {
+    raise Unsupported("token is already sealed")
+  }
+  let secret = proof_reader.bytes()
+  if proof_reader.pos != proof.length() {
+    raise Malformed("invalid proof")
+  }
+
+  let last = blocks[blocks.length() - 1]
+  let payload = last.data + b"\x00\x00\x00\x00" + last.next_key + last.signature
+  let signature = @ed25519.sign(secret, payload) catch {
+    _ => raise Malformed("could not seal token")
+  }
+  let sealed_proof = encode_bytes_field(b'\x12', signature)
+  let result = prefix + encode_bytes_field(b'\x22', sealed_proof)
+  if result.length() > 1048576 {
+    raise Malformed("token exceeds 1 MiB")
+  }
+  result
+}
+
+///|
 /// Append an already serialized block to an unsealed, signature-verified token.
 /// `next_seed` must come from a cryptographically secure RNG and be fresh.
 /// The block is not parsed or checked: the caller must use a conforming Biscuit

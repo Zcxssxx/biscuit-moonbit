@@ -102,6 +102,46 @@ test "upstream sealed token signature chain" {
 }
 
 ///|
+test "seal an attenuated token and reject further attenuation" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let token = @biscuit.issue([], [], [], 6, root_seed, Bytes::make(32, b'\x61'))
+  let attenuated = @biscuit.append_raw(
+    token,
+    root,
+    b"\x18\x06",
+    Bytes::make(32, b'\x62'),
+  )
+  let sealed_token = @biscuit.seal_token(attenuated, root)
+  @biscuit.verify_signatures(sealed_token, root)
+
+  let reseal_rejected = try {
+    ignore(@biscuit.seal_token(sealed_token, root))
+    false
+  } catch {
+    @biscuit.Unsupported(_) => true
+    _ => false
+  }
+  assert_true(reseal_rejected)
+
+  let append_rejected = try {
+    ignore(
+      @biscuit.append_raw(
+        sealed_token,
+        root,
+        b"\x18\x06",
+        Bytes::make(32, b'\x63'),
+      ),
+    )
+    false
+  } catch {
+    @biscuit.Unsupported("sealed token") => true
+    _ => false
+  }
+  assert_true(append_rejected)
+}
+
+///|
 test "upstream corrupted signatures are rejected" {
   let accepted = try {
     @biscuit.verify_signatures(test005_invalid_signature, root_key)

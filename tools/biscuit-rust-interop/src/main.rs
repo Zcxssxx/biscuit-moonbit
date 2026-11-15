@@ -48,10 +48,12 @@ fn run_mint() -> Result<(), Box<dyn Error>> {
     let attenuation = BlockBuilder::new()
         .code("attenuated(true); check if attenuated(true) trusting previous;")?;
     let attenuated = authority.append(attenuation)?;
+    let sealed = attenuated.seal()?;
 
     println!("ROOT_PUBLIC_KEY={}", root.public().to_bytes_hex());
     println!("RUST_TOKEN={}", authority.to_base64()?);
     println!("RUST_ATTENUATED={}", attenuated.to_base64()?);
+    println!("RUST_SEALED={}", sealed.to_base64()?);
     Ok(())
 }
 
