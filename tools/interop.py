@@ -137,7 +137,7 @@ def main() -> None:
         "biscuit-rust sealed token",
         rust_tokens["RUST_SEALED"],
         rust_root,
-        "attenuated(true)",
+        "true",
         "ALLOW",
     )
 
