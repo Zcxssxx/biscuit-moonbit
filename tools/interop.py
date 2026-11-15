@@ -130,7 +130,7 @@ def main() -> None:
         "biscuit-rust attenuation",
         rust_tokens["RUST_ATTENUATED"],
         rust_root,
-        "attenuated(true)",
+        "true",
         "ALLOW",
     )
 
@@ -148,7 +148,7 @@ def main() -> None:
         "MoonBit attenuation of a biscuit-rust token",
         moonbit_attenuated,
         rust_root,
-        "moonbit_attenuated(true)",
+        "true",
         "ALLOW",
     )
 

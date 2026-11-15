@@ -15,12 +15,16 @@ fn main {
       Some(seed) => seed
       None => abort("operating system entropy source is unavailable")
     }
+    let check = @biscuit.parse_check_body(
+      "moonbit_attenuated(true) trusting previous",
+      @biscuit.Any,
+    )
     let attenuated = @biscuit.attenuate_block(
       token,
       root_key,
       [@biscuit.parse_fact("moonbit_attenuated(true)")],
       [],
-      [],
+      [check],
       [],
       6,
       next_seed,

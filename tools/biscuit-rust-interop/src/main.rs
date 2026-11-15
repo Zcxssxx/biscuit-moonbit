@@ -45,7 +45,9 @@ fn run_mint() -> Result<(), Box<dyn Error>> {
     let authority = Biscuit::builder()
         .fact("interop_allow(true)")?
         .build(&root)?;
-    let attenuated = authority.append(BlockBuilder::new().fact("attenuated(true)")?)?;
+    let attenuation = BlockBuilder::new()
+        .code("attenuated(true); check if attenuated(true) trusting previous;")?;
+    let attenuated = authority.append(attenuation)?;
 
     println!("ROOT_PUBLIC_KEY={}", root.public().to_bytes_hex());
     println!("RUST_TOKEN={}", authority.to_base64()?);

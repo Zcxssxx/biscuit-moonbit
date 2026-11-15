@@ -1486,7 +1486,7 @@ fn resolve_visible_origins(
         for origin = 0; origin < current_origin; origin = origin + 1 {
           add_origin(visible, origin)
         }
-      TrustPrevious => () // `previous` is ignored for authorizer rules.
+      TrustPrevious => () // Policies run at the authorizer origin.
       TrustPublicKey(key) =>
         for program in programs {
           if program.external_public_key == Some(key) {
