@@ -40,6 +40,12 @@ fn run_authorize() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_parse_datalog() -> Result<(), Box<dyn Error>> {
+    let _block = BlockBuilder::new().code(required("BISCUIT_DATALOG")?)?;
+    println!("PARSED");
+    Ok(())
+}
+
 fn run_mint() -> Result<(), Box<dyn Error>> {
     let root = private_key(ROOT_SEED_HEX)?;
     let authority = Biscuit::builder()
@@ -106,11 +112,12 @@ fn run_append_moonbit_third_party() -> Result<(), Box<dyn Error>> {
 fn run() -> Result<(), Box<dyn Error>> {
     match env::args().nth(1).as_deref() {
         Some("authorize") => run_authorize(),
+        Some("parse-datalog") => run_parse_datalog(),
         Some("mint") => run_mint(),
         Some("mint-third-party") => run_mint_third_party(),
         Some("append-moonbit-third-party") => run_append_moonbit_third_party(),
         _ => {
-            Err("expected authorize, mint, mint-third-party, or append-moonbit-third-party".into())
+            Err("expected authorize, parse-datalog, mint, mint-third-party, or append-moonbit-third-party".into())
         }
     }
 }

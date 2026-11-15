@@ -17,6 +17,64 @@ test "issue a raw block and verify its signature chain" {
 }
 
 ///|
+test "detailed authorization returns policy decisions and preserves legacy errors" {
+  let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
+  let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"
+  let token = @biscuit.issue(
+    [@biscuit.parse_fact("gate(true)")],
+    [],
+    [],
+    6,
+    root_seed,
+    Bytes::make(32, b'\x42'),
+  )
+  let no_match = @biscuit.parse_policy("allow if gate(false)")
+  let allow = @biscuit.parse_policy("allow if gate(true)")
+  let deny = @biscuit.parse_policy("deny if gate(true)")
+  let externals = @biscuit.ExternalFunctions::{
+    unary: Map([]),
+    binary: Map([]),
+  }
+
+  let allowed = @biscuit.authorize_token_detailed(
+    token,
+    root_key,
+    [],
+    [],
+    [],
+    [no_match, allow],
+    100,
+    20,
+    externals,
+  )
+  assert_true(allowed.decision == @biscuit.Allow)
+  assert_eq(allowed.policy_index, 1)
+
+  let denied = @biscuit.authorize_token_detailed(
+    token,
+    root_key,
+    [],
+    [],
+    [],
+    [deny, allow],
+    100,
+    20,
+    externals,
+  )
+  assert_true(denied.decision == @biscuit.Deny)
+  assert_eq(denied.policy_index, 0)
+
+  let legacy_error = try {
+    @biscuit.authorize_token(token, root_key, [], [], [deny], 100, 20)
+    false
+  } catch {
+    @biscuit.Denied(0) => true
+    _ => false
+  }
+  assert_true(legacy_error)
+}
+
+///|
 test "verified authority facts decode null and nested array terms" {
   let root_seed = b"\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60"
   let root_key = b"\xd7\x5a\x98\x01\x82\xb1\x0a\xb7\xd5\x4b\xfe\xd3\xc9\x64\x07\x3a\x0e\xe1\x72\xf3\xda\xa6\x23\x25\xaf\x02\x1a\x68\xf7\x07\x51\x1a"

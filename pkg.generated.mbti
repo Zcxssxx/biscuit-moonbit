@@ -20,6 +20,8 @@ pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
 
 pub fn authorize_token(Bytes, Bytes, Array[Fact], Array[Rule], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
 
+pub fn authorize_token_detailed(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> AuthorizationResult raise AuthorizationError
+
 pub fn authorize_token_with_checks(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
 
 pub fn authorize_token_with_externals(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> Unit raise AuthorizationError
@@ -52,9 +54,15 @@ pub fn issue_with_scopes(Array[Fact], Array[Rule], Array[Check], Array[TrustScop
 
 pub fn match_query(Predicate, Array[Fact]) -> Array[Map[String, Value]]
 
+pub fn parse_check(String) -> Check raise TokenError
+
 pub fn parse_check_body(String, CheckMode) -> Check raise TokenError
 
+pub fn parse_expression(String) -> Condition raise TokenError
+
 pub fn parse_fact(String) -> Fact raise TokenError
+
+pub fn parse_policy(String) -> Policy raise TokenError
 
 pub fn parse_policy_body(String, PolicyKind) -> Policy raise TokenError
 
@@ -67,6 +75,22 @@ pub fn parse_rule(String) -> Rule raise TokenError
 pub fn parse_third_party_block(Bytes) -> ThirdPartyBlockContents raise TokenError
 
 pub fn parse_trust_scopes(String) -> Array[TrustScope] raise TokenError
+
+pub fn print_check(Check) -> String raise TokenError
+
+pub fn print_expression(Condition) -> String raise TokenError
+
+pub fn print_fact(Fact) -> String raise TokenError
+
+pub fn print_policy(Policy) -> String raise TokenError
+
+pub fn print_predicate(Predicate) -> String raise TokenError
+
+pub fn print_query_body(Query) -> String raise TokenError
+
+pub fn print_rule(Rule) -> String raise TokenError
+
+pub fn print_value(Value) -> String raise TokenError
 
 pub fn seal_token(Bytes, Bytes) -> Bytes raise TokenError
 
@@ -120,6 +144,13 @@ pub suberror TokenError {
 }
 
 // Types and methods
+pub(all) struct AuthorizationResult {
+  decision : PolicyKind
+  policy_index : Int32
+} derive(Eq)
+pub fn AuthorizationResult::equal(Self, Self) -> Bool
+pub fn AuthorizationResult::not_equal(Self, Self) -> Bool
+
 pub(all) enum BinaryOperator {
   LessThan
   GreaterThan
@@ -151,39 +182,53 @@ pub(all) enum BinaryOperator {
   Get
   ExternalBinary(String)
   TryOr
-}
+} derive(Eq)
+pub fn BinaryOperator::equal(Self, Self) -> Bool
+pub fn BinaryOperator::not_equal(Self, Self) -> Bool
 
 pub(all) struct Check {
   mode : CheckMode
   queries : Array[Query]
-}
+} derive(Eq)
+pub fn Check::equal(Self, Self) -> Bool
+pub fn Check::not_equal(Self, Self) -> Bool
 
 pub(all) enum CheckMode {
   Any
   All
   Reject
-}
+} derive(Eq)
+pub fn CheckMode::equal(Self, Self) -> Bool
+pub fn CheckMode::not_equal(Self, Self) -> Bool
 
 pub(all) struct Condition {
   operations : Array[ExpressionOp]
-}
+} derive(Eq)
+pub fn Condition::equal(Self, Self) -> Bool
+pub fn Condition::not_equal(Self, Self) -> Bool
 
 pub(all) struct ExpressionClosure {
   parameters : Array[String]
   operations : Array[ExpressionOp]
-}
+} derive(Eq)
+pub fn ExpressionClosure::equal(Self, Self) -> Bool
+pub fn ExpressionClosure::not_equal(Self, Self) -> Bool
 
 pub(all) enum ExpressionOp {
   Value(ExpressionValue)
   Unary(UnaryOperator)
   Binary(BinaryOperator)
   Closure(ExpressionClosure)
-}
+} derive(Eq)
+pub fn ExpressionOp::equal(Self, Self) -> Bool
+pub fn ExpressionOp::not_equal(Self, Self) -> Bool
 
 pub(all) enum ExpressionValue {
   Literal(Value)
   Reference(String)
-}
+} derive(Eq)
+pub fn ExpressionValue::equal(Self, Self) -> Bool
+pub fn ExpressionValue::not_equal(Self, Self) -> Bool
 
 pub(all) struct ExternalFunctions {
   unary : Map[String, (Value) -> Value raise AuthorizationError]
@@ -214,23 +259,31 @@ pub fn MapKey::to_repr(Self) -> @debug.Repr
 pub(all) struct Policy {
   kind : PolicyKind
   queries : Array[Query]
-}
+} derive(Eq)
+pub fn Policy::equal(Self, Self) -> Bool
+pub fn Policy::not_equal(Self, Self) -> Bool
 
 pub(all) enum PolicyKind {
   Allow
   Deny
-}
+} derive(Eq)
+pub fn PolicyKind::equal(Self, Self) -> Bool
+pub fn PolicyKind::not_equal(Self, Self) -> Bool
 
 pub(all) struct Predicate {
   name : String
   terms : Array[QueryTerm]
-}
+} derive(Eq)
+pub fn Predicate::equal(Self, Self) -> Bool
+pub fn Predicate::not_equal(Self, Self) -> Bool
 
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-}
+} derive(Eq)
+pub fn Query::equal(Self, Self) -> Bool
+pub fn Query::not_equal(Self, Self) -> Bool
 
 pub(all) enum QueryTerm {
   Constant(Value)
@@ -245,7 +298,9 @@ pub(all) struct Rule {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-}
+} derive(Eq)
+pub fn Rule::equal(Self, Self) -> Bool
+pub fn Rule::not_equal(Self, Self) -> Bool
 
 pub(all) struct ThirdPartyBlockContents {
   payload : Bytes
@@ -267,7 +322,9 @@ pub(all) enum UnaryOperator {
   Length
   TypeOf
   ExternalUnary(String)
-}
+} derive(Eq)
+pub fn UnaryOperator::equal(Self, Self) -> Bool
+pub fn UnaryOperator::not_equal(Self, Self) -> Bool
 
 pub(all) enum Value {
   Text(String)

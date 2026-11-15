@@ -37,7 +37,7 @@ pub impl Eq for Value with fn equal(self, other) -> Bool {
     (Boolean(a), Boolean(b)) => a == b
     (Null, Null) => true
     (SetValue(a), SetValue(b)) =>
-      a.length() == b.length() && a.all(value => b.contains(value))
+      a.all(value => b.contains(value)) && b.all(value => a.contains(value))
     _ => false
   }
 }
@@ -69,7 +69,10 @@ pub extend QueryTerm with @debug.Debug::{to_repr}
 pub(all) struct Predicate {
   name : String
   terms : Array[QueryTerm]
-}
+} derive(Eq)
+
+///|
+pub extend Predicate with Eq::{equal, not_equal}
 
 ///|
 /// A concrete fact contains no variables.
@@ -102,13 +105,19 @@ pub(all) struct Rule {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-}
+} derive(Eq)
+
+///|
+pub extend Rule with Eq::{equal, not_equal}
 
 ///|
 pub(all) enum ExpressionValue {
   Literal(Value)
   Reference(String)
-}
+} derive(Eq)
+
+///|
+pub extend ExpressionValue with Eq::{equal, not_equal}
 
 ///|
 pub(all) enum UnaryOperator {
@@ -117,7 +126,10 @@ pub(all) enum UnaryOperator {
   Length
   TypeOf
   ExternalUnary(String)
-}
+} derive(Eq)
+
+///|
+pub extend UnaryOperator with Eq::{equal, not_equal}
 
 ///|
 pub(all) enum BinaryOperator {
@@ -151,13 +163,19 @@ pub(all) enum BinaryOperator {
   Get
   ExternalBinary(String)
   TryOr
-}
+} derive(Eq)
+
+///|
+pub extend BinaryOperator with Eq::{equal, not_equal}
 
 ///|
 pub(all) struct ExpressionClosure {
   parameters : Array[String]
   operations : Array[ExpressionOp]
-}
+} derive(Eq)
+
+///|
+pub extend ExpressionClosure with Eq::{equal, not_equal}
 
 ///|
 /// Datalog expression bytecode, kept in its protocol-defined postfix order.
@@ -166,19 +184,28 @@ pub(all) enum ExpressionOp {
   Unary(UnaryOperator)
   Binary(BinaryOperator)
   Closure(ExpressionClosure)
-}
+} derive(Eq)
+
+///|
+pub extend ExpressionOp with Eq::{equal, not_equal}
 
 ///|
 pub(all) struct Condition {
   operations : Array[ExpressionOp]
-}
+} derive(Eq)
+
+///|
+pub extend Condition with Eq::{equal, not_equal}
 
 ///|
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-}
+} derive(Eq)
+
+///|
+pub extend Query with Eq::{equal, not_equal}
 
 ///|
 /// How queries in a check group are combined.
@@ -186,26 +213,48 @@ pub(all) enum CheckMode {
   Any
   All
   Reject
-}
+} derive(Eq)
+
+///|
+pub extend CheckMode with Eq::{equal, not_equal}
 
 ///|
 pub(all) struct Check {
   mode : CheckMode
   queries : Array[Query]
-}
+} derive(Eq)
+
+///|
+pub extend Check with Eq::{equal, not_equal}
 
 ///|
 pub(all) enum PolicyKind {
   Allow
   Deny
-}
+} derive(Eq)
+
+///|
+pub extend PolicyKind with Eq::{equal, not_equal}
 
 ///|
 /// Ordered policy query. The first matching policy determines the decision.
 pub(all) struct Policy {
   kind : PolicyKind
   queries : Array[Query]
-}
+} derive(Eq)
+
+///|
+pub extend Policy with Eq::{equal, not_equal}
+
+///|
+/// Authorization decision selected by the first matching policy.
+pub(all) struct AuthorizationResult {
+  decision : PolicyKind
+  policy_index : Int32
+} derive(Eq)
+
+///|
+pub extend AuthorizationResult with Eq::{equal, not_equal}
 
 ///|
 pub suberror ExpressionError {
@@ -501,6 +550,11 @@ fn Lexer::next(self : Lexer) -> Lexeme raise TokenError {
           ((c == '&' || c == '|') && self.chars[self.pos] == c)
         ) {
         self.pos += 1
+        if (c == '&' || c == '|') &&
+          self.pos < self.chars.length() &&
+          self.chars[self.pos] == '!' {
+          self.pos += 1
+        }
         if (c == '=' || c == '!') &&
           self.pos < self.chars.length() &&
           self.chars[self.pos] == '=' {
@@ -1081,7 +1135,9 @@ fn expression_operator(source : String) -> (Int32, BinaryOperator, Bool, Bool)? 
     "==" => Some((3, LenientEqual, true, false))
     "!=" => Some((3, LenientNotEqual, true, false))
     "&&" => Some((2, LazyAnd, false, true))
+    "&&!" => Some((2, EagerAnd, false, false))
     "||" => Some((1, LazyOr, false, true))
+    "||!" => Some((1, EagerOr, false, false))
     _ => None
   }
 }
@@ -1269,6 +1325,12 @@ fn parse_condition(text : String) -> Condition raise TokenError {
   }
   validate_expression_program(operations, 0)
   { operations, }
+}
+
+///|
+/// Parse one Datalog expression, including closures and the v3.3 operators.
+pub fn parse_expression(text : String) -> Condition raise TokenError {
+  parse_condition(text)
 }
 
 ///|

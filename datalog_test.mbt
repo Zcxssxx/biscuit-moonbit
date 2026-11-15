@@ -765,3 +765,73 @@ test "registered external functions run in expressions policies and rules" {
   }
   assert_true(missing)
 }
+
+///|
+test "Datalog expressions print and parse with operator identity preserved" {
+  let expressions = [
+    "1 + 2 * 3", "7 - 2 / 2", "(1 + 2) * 3", "!true || false", "true &&! false",
+    "false ||! true", "1 < 2 && 2 <= 3", "3 > 2 || 2 >= 2", "1 === 1", "1 !== 2",
+    "1 == \"1\"", "1 != \"1\"", "\"abc\".contains(\"b\")", "\"abc\".starts_with(\"a\")",
+    "\"abc\".ends_with(\"c\")", "\"abc\".matches(\"^a.*c$\")", "{1, 2}.intersection({2, 3})",
+    "{1, 2}.union({2, 3})", "9 & 3 | 2 ^ 1", "[1, 2].get(0)", "[1, 2].any($n -> $n > 1)",
+    "[1, 2].all($n -> $n > 0)", "[1].length() == 1", "true.type() == \"bool\"", "null.try_or(\"fallback\") == \"fallback\"",
+    "1.extern::identity() == 1", "1.extern::add(2) == 3",
+  ]
+  for source in expressions {
+    let parsed = @biscuit.parse_expression(source)
+    let printed = @biscuit.print_expression(parsed)
+    let reparsed = @biscuit.parse_expression(printed)
+    assert_true(reparsed == parsed)
+  }
+}
+
+///|
+test "Datalog values dates and scoped rules round trip through text" {
+  let fact = @biscuit.parse_fact(
+    "settings({\"line\\nbreak\": [true, null, hex:deadbeef], 7: {,}})",
+  )
+  assert_true(@biscuit.parse_fact(@biscuit.print_fact(fact)) == fact)
+  let redundant_set = @biscuit.Fact::{
+    name: "tags",
+    values: [@biscuit.SetValue([@biscuit.Number(1L), @biscuit.Number(1L)])],
+  }
+  let canonical_set = @biscuit.Fact::{
+    name: "tags",
+    values: [@biscuit.SetValue([@biscuit.Number(1L)])],
+  }
+  assert_true(
+    @biscuit.parse_fact(@biscuit.print_fact(redundant_set)) == canonical_set,
+  )
+  assert_eq(@biscuit.print_value(@biscuit.Date(-1L)), "1969-12-31T23:59:59Z")
+  let parsed_date = @biscuit.parse_fact("time(2026-11-15T12:34:56+08:00)")
+  let date_seconds = match parsed_date.values[0] {
+    @biscuit.Date(seconds) => seconds
+    _ => abort("expected date fact")
+  }
+  assert_eq(
+    @biscuit.print_value(@biscuit.Date(date_seconds)),
+    "2026-11-15T04:34:56Z",
+  )
+
+  let rule = @biscuit.parse_rule(
+    "eligible($user) <- member($user), active($user), $user != \"blocked\" trusting authority, previous",
+  )
+  assert_true(@biscuit.parse_rule(@biscuit.print_rule(rule)) == rule)
+}
+
+///|
+test "Datalog check and policy directives preserve alternatives and scopes" {
+  let check = @biscuit.parse_check(
+    "check all role(\"a or b\") trusting authority or role(\"admin\") trusting previous;",
+  )
+  assert_true(@biscuit.parse_check(@biscuit.print_check(check)) == check)
+  let reject = @biscuit.parse_check("reject if banned($user), $user == 3")
+  assert_true(@biscuit.parse_check(@biscuit.print_check(reject)) == reject)
+
+  let policy = @biscuit.parse_policy(
+    "allow if role(\"a or b\") trusting authority or role(\"admin\") trusting previous;",
+  )
+  assert_true(@biscuit.parse_policy(@biscuit.print_policy(policy)) == policy)
+  let deny = @biscuit.parse_policy("deny if banned($user)")
+  assert_true(@biscuit.parse_policy(@biscuit.print_policy(deny)) == deny)
+}

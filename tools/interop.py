@@ -150,6 +150,15 @@ def main() -> None:
         "ALLOW",
     )
 
+    printed_datalog = run(
+        ["moon", "run", "--target", "native", "examples/print_datalog"]
+    )
+    parsed_datalog = rust("parse-datalog", {"BISCUIT_DATALOG": printed_datalog})
+    assert parsed_datalog == "PARSED", (
+        f"biscuit-rust did not parse MoonBit Datalog output: {parsed_datalog}"
+    )
+    print("MoonBit Datalog printer output parsed by biscuit-rust")
+
     env = os.environ.copy()
     env.update(
         {

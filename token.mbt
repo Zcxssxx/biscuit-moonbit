@@ -1334,6 +1334,30 @@ pub fn authorize_token_with_externals(
   max_iterations : Int32,
   externals : ExternalFunctions,
 ) -> Unit raise AuthorizationError {
+  let result = authorize_token_detailed(
+    token, root_key, ambient_facts, ambient_rules, ambient_checks, policies, max_facts,
+    max_iterations, externals,
+  )
+  match result.decision {
+    Allow => ()
+    Deny => raise Denied(result.policy_index)
+  }
+}
+
+///|
+/// Verify a token and return the first matching allow/deny policy as data.
+/// Token, check, expression, and resource failures remain structured errors.
+pub fn authorize_token_detailed(
+  token : Bytes,
+  root_key : Bytes,
+  ambient_facts : Array[Fact],
+  ambient_rules : Array[Rule],
+  ambient_checks : Array[Check],
+  policies : Array[Policy],
+  max_facts : Int32,
+  max_iterations : Int32,
+  externals : ExternalFunctions,
+) -> AuthorizationResult raise AuthorizationError {
   let programs = verify_block_programs(token, root_key) catch {
     Malformed(message) => raise InvalidToken(message)
     Unsupported(message) => raise UnsupportedTokenFeature(message)
@@ -1449,8 +1473,8 @@ pub fn authorize_token_with_externals(
     })
     if matched {
       match policy.kind {
-        Allow => return
-        Deny => raise Denied(i)
+        Allow => return { decision: Allow, policy_index: i, }
+        Deny => return { decision: Deny, policy_index: i, }
       }
     }
   }
