@@ -49,7 +49,7 @@ fn main {
       @biscuit.FailedCheck(_) => println("write file1: denied by token check")
       _ => println("write file1: denied")
     }
-    println("The example uses the restricted subset described in README.md.")
+    println("The example uses the supported Datalog 3.0–3.3 Ed25519 profile.")
   } catch {
     _ => println("Token construction or authorization failed.")
   }

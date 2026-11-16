@@ -41,7 +41,8 @@ fn run_authorize() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_parse_datalog() -> Result<(), Box<dyn Error>> {
-    let _block = BlockBuilder::new().code(required("BISCUIT_DATALOG")?)?;
+    let _block = BlockBuilder::new().code(required("BISCUIT_DATALOG_BLOCK")?)?;
+    let _authorizer = AuthorizerBuilder::new().code(required("BISCUIT_DATALOG_POLICY")?)?;
     println!("PARSED");
     Ok(())
 }

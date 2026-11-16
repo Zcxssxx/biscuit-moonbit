@@ -158,7 +158,16 @@ def main() -> None:
     printed_datalog = run(
         ["moon", "run", "--target", "native", "examples/print_datalog"]
     )
-    parsed_datalog = rust("parse-datalog", {"BISCUIT_DATALOG": printed_datalog})
+    block_code, policy_code = printed_datalog.rsplit("\n", 1)
+    if not policy_code.startswith(("allow if ", "deny if ")):
+        raise AssertionError(f"unexpected printed policy: {policy_code}")
+    parsed_datalog = rust(
+        "parse-datalog",
+        {
+            "BISCUIT_DATALOG_BLOCK": block_code,
+            "BISCUIT_DATALOG_POLICY": policy_code,
+        },
+    )
     assert parsed_datalog == "PARSED", (
         f"biscuit-rust did not parse MoonBit Datalog output: {parsed_datalog}"
     )
