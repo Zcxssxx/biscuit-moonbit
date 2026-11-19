@@ -20,6 +20,8 @@ jobs:
       - run: moon build
       - run: moon test
       - run: moon run examples/verify
+      - name: Validate maintenance delegation business case
+        run: moon run examples/maintenance
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

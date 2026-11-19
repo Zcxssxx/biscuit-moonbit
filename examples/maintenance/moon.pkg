@@ -1,0 +1,7 @@
+import {
+  "Zcxssxx/biscuit",
+  "hustcer/ed25519",
+  "moonbitlang/core/encoding/hex",
+}
+
+pkgtype(kind: "executable")

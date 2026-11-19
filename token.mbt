@@ -1118,6 +1118,28 @@ pub fn verify_signatures(
 }
 
 ///|
+// Third-party blocks have isolated symbol tables and do not advance the token table.
+fn verified_symbol_tables(
+  signed : Array[SignedBlock],
+  encoded : Array[EncodedFactBlock],
+) -> Array[Array[String]] raise TokenError {
+  let shared = default_symbols()
+  let tables : Array[Array[String]] = []
+  for i = 0; i < encoded.length(); i = i + 1 {
+    let symbols = if signed[i].external_signature is Some(_) {
+      default_symbols()
+    } else {
+      shared
+    }
+    for symbol in encoded[i].symbols {
+      parse_symbols(symbol, symbols)
+    }
+    tables.push(symbols.map(value => value))
+  }
+  tables
+}
+
+///|
 /// Facts decoded from one signature-verified token block.
 pub(all) struct VerifiedBlockFacts {
   index : Int32
@@ -1154,15 +1176,11 @@ pub fn verify_block_facts(
   for block in signed {
     encoded.push(parse_encoded_fact_block(block.data))
   }
-  let symbols = default_symbols()
-  for block in encoded {
-    for symbol in block.symbols {
-      parse_symbols(symbol, symbols)
-    }
-  }
+  let symbol_tables = verified_symbol_tables(signed, encoded)
   let result : Array[VerifiedBlockFacts] = []
   let mut total_facts = 0
   for i = 0; i < signed.length(); i = i + 1 {
+    let symbols = symbol_tables[i]
     let facts : Array[Fact] = []
     for data in encoded[i].facts {
       total_facts += 1
@@ -1189,13 +1207,14 @@ pub fn verify_block_programs(
   for block in signed {
     encoded.push(parse_encoded_fact_block(block.data))
   }
-  let symbols = default_symbols()
-  for block in encoded {
-    for symbol in block.symbols {
-      parse_symbols(symbol, symbols)
+  let symbol_tables = verified_symbol_tables(signed, encoded)
+  let regular_blocks : Array[EncodedFactBlock] = []
+  for i = 0; i < signed.length(); i = i + 1 {
+    if signed[i].external_signature is None {
+      regular_blocks.push(encoded[i])
     }
   }
-  let public_key_table = intern_public_key_table(encoded)
+  let public_key_table = intern_public_key_table(regular_blocks)
   let programs : Array[VerifiedBlockProgram] = []
   let mut total_facts = 0
   let mut total_rules = 0
@@ -1206,6 +1225,7 @@ pub fn verify_block_programs(
     } else {
       public_key_table
     }
+    let symbols = symbol_tables[i]
     let facts : Array[Fact] = []
     for data in encoded[i].facts {
       total_facts += 1

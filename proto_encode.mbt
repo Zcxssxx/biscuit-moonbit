@@ -721,6 +721,9 @@ pub fn attenuate(
   let signed = verify_signed_chain(token, root_key)
   let existing_symbols : Array[String] = []
   for block in signed {
+    if block.external_signature is Some(_) {
+      continue
+    }
     let encoded = parse_encoded_fact_block(block.data)
     for symbol in encoded.symbols {
       let value = @utf8.decode(symbol) catch {
@@ -756,6 +759,9 @@ pub fn attenuate_block(
   let signed = verify_signed_chain(token, root_key)
   let existing_symbols : Array[String] = []
   for block in signed {
+    if block.external_signature is Some(_) {
+      continue
+    }
     let encoded = parse_encoded_fact_block(block.data)
     for symbol in encoded.symbols {
       let value = @utf8.decode(symbol) catch {
