@@ -696,14 +696,24 @@ fn scoped_rule_bindings(
   visible_origins : Array[Int32],
   max_bindings : Int32,
 ) -> Array[OriginBindings] raise AuthorizationError {
+  // Index by predicate name once, while retaining every origin variant.
+  let by_name : Map[String, Array[FactOrigin]] = Map([])
+  for fact in facts {
+    if fact.origins.all(origin => visible_origins.contains(origin)) {
+      match by_name.get(fact.fact.name) {
+        Some(candidates) => candidates.push(fact)
+        None => by_name.set(fact.fact.name, [fact])
+      }
+    }
+  }
   let mut environments : Array[OriginBindings] = [
     { values: Map([]), origins: [], },
   ]
   for predicate in rule.body {
     let next_environments : Array[OriginBindings] = []
     for environment in environments {
-      for fact in facts {
-        if fact.origins.all(origin => visible_origins.contains(origin)) {
+      for fact in by_name.get(predicate.name).unwrap_or([]) {
+        if predicate.terms.length() == fact.fact.values.length() {
           match unify(predicate, fact.fact, environment.values) {
             Some(values) => {
               if next_environments.length() >= max_bindings {

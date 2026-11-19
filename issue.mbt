@@ -236,6 +236,9 @@ pub fn sign_third_party_request(
   block_data : Bytes,
   external_seed : Bytes,
 ) -> ExternalSignature raise TokenError {
+  if request.length() > MAX_TOKEN_SIZE || block_data.length() > MAX_TOKEN_SIZE {
+    raise Malformed("third-party signing input exceeds 1 MiB")
+  }
   if external_seed.length() != 32 {
     raise Malformed("third-party seed must be 32 bytes")
   }
@@ -243,8 +246,8 @@ pub fn sign_third_party_request(
   let mut previous_signature : Bytes? = None
   while r.pos < request.length() {
     match r.varint() {
-      10 => ignore(r.bytes())
-      18 => ignore(r.bytes())
+      10 | 18 =>
+        raise Unsupported("legacy third-party request fields are not supported")
       26 if previous_signature is None => previous_signature = Some(r.bytes())
       26 => raise Malformed("duplicate previous signature in request")
       _ => raise Malformed("invalid third-party request")
@@ -253,6 +256,9 @@ pub fn sign_third_party_request(
   let previous = match previous_signature {
     Some(value) => value
     None => raise Malformed("third-party request has no previous signature")
+  }
+  if previous.length() != 64 {
+    raise Malformed("previous signature must be 64 bytes")
   }
   let public_key = @ed25519.derive_public_key(external_seed) catch {
     _ => raise Malformed("invalid third-party seed")
@@ -294,6 +300,9 @@ pub fn serialize_third_party_block(contents : ThirdPartyBlockContents) -> Bytes 
 pub fn parse_third_party_block(
   data : Bytes,
 ) -> ThirdPartyBlockContents raise TokenError {
+  if data.length() > MAX_TOKEN_SIZE {
+    raise Malformed("third-party contents exceed 1 MiB")
+  }
   let r = Reader::{ data, pos: 0, }
   let mut payload : Bytes? = None
   let mut external_signature : ExternalSignature? = None
