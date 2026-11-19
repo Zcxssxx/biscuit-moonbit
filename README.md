@@ -6,6 +6,8 @@ Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当
 
 ## 支持范围
 
+具体应用案例：[工厂日志的外包排障委托](docs/maintenance-case.md)。平台授予读取权，承包商把交给工单工具的子令牌缩到单台设备、单个工单和期限；工厂审批方独立签署放行事实。网关离线验证原授权、追加限制和受信第三方背书。运行 `moon run examples/maintenance` 可验收一个允许场景和九个拒绝场景。案例为模拟集成原型，接入边界与 ACL/JWT 的取舍详见案例文档。
+
 | 能力 | 支持范围 |
 | --- | --- |
 | Biscuit 外层格式 | 当前 protobuf v3；Datalog block version 3、4、5、6 分别对应 Datalog 3.0、3.1、3.2、3.3 |
@@ -21,7 +23,7 @@ P-256/secp256r1、Biscuit 外层旧格式 v0/v1/v2 不在当前支持范围。�
 
 ## 快速开始
 
-本机工具链固定为 MoonBit 0.1.20261023 / moonc 0.10.17+d971670cd。根目录的 .moonbit-toolchain 是安装版本。可运行：
+CI 工具链固定为 MoonBit 0.1.20261023 / moonc 0.10.17+d971670cd，版本见 .moonbit-toolchain。本机工具链可能不同，应以 `moon version --all` 的实际输出为准。可运行：
 
     moon update
     moon check
@@ -33,6 +35,7 @@ P-256/secp256r1、Biscuit 外层旧格式 v0/v1/v2 不在当前支持范围。�
     moon run examples/third_party
     moon run examples/seal
     moon run examples/print_datalog
+    moon run examples/maintenance
 
 examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_rust 通过环境变量读取 Rust 令牌，再由 MoonBit 追加事实与 check。examples/third_party 展示第三方请求、签名、追加和授权。examples/seal 生成封存令牌，examples/print_datalog 输出 Rust 解析器可读取的规则、check 与策略文本。所有固定测试密钥都仅供测试。
 
@@ -81,7 +84,7 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：115 项通过，0 项失败。
+- moon test：116 项通过，0 项失败。
 - `moon test -f 'official*'`：51 项通过、0 项失败。覆盖 38 个官方样例 ID 的 50 个授权场景，以及一项官方 test024 第三方块签名验证；其中 49 项属于 Ed25519 支持范围，2 个 P-256 场景按声明返回 `unsupported_token`，不计入兼容通过数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 

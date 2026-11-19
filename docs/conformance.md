@@ -102,3 +102,19 @@ moon test -f 'official*'
 | `python -m py_compile tools/interop.py` | 退出码 0 |
 
 本机没有 Rust `cargo`，所以 Rust helper 的格式、测试与互通结果只引用上述 Actions 运行，不记作本地通过。
+
+## 2026-11-19 业务案例与符号表回归
+
+本轮修复第三方块符号表应独立、后续普通块应忽略第三方符号的行为，规范依据为固定 SHA 的 SPECIFICATIONS.md 的 “third party blocks (with an external signature)” 节。新增一项白盒回归测试，验证同名业务值与后续常规块索引隔离。
+
+本机工具链已变为 `moon 0.1.20261104` / `moonc v0.10.20+65efd5b93`；CI 仍按 `.moonbit-toolchain` 固定原版本。本机新工具链报告旧 derive 语法弃用警告，未改动库的公开接口。执行 `moon info` 和 `moon fmt` 后，保留与旧 CI 兼容的既有 derive 语法。
+
+本地实际命令与结果：
+
+- `moon test -f '*symbols are isolated*'`：1 项通过。
+- `moon test`：116 项通过、0 项失败。
+- `moon test -f 'official*'`：51 项通过、0 项失败，统计边界同上。
+- `moon build`：成功，含新 maintenance 示例。
+- `moon run examples/maintenance`：10/10 场景符合预期（一个允许、九个拒绝）。
+
+业务案例是模拟集成原型。具体接入职责、工单流程、方案取舍和结果表见 [maintenance-case.md](maintenance-case.md)。代码提交 `fe10e680854301cf6a18bf16e5a75a483e317937` 的 [CI run 44439951220](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44439951220) 已成功：固定工具链格式检查、检查/构建/116 项测试、新业务案例、Rust helper 及原有双向互通全部通过。

@@ -31,3 +31,5 @@
 初审点名的四类核心语义已进入实现：完整 Datalog 表达式与文本往返、显式 scope、可带 facts/rules/checks 的衰减块、Ed25519 第三方块和来源感知 Authorizer。sealed token 创建和详细策略决策也已补齐。
 
 仍需在复审材料中明示的限制是：P-256 与旧 token 外层格式不支持；未知 protobuf 字段严格拒绝；没有 wall-clock timeout；密码依赖未经本项目审计；跨实现验证是固定 Rust 修订上的 curated suite，尚无随机 differential 和所有错误索引的系统比较。最终通过数与新增跨实现结果以 [conformance.md](conformance.md) 中的运行命令和 Actions 记录为准。
+
+2026-11-19 追加验证：具体接入对象、委托流程和 ACL/JWT 比较见 [maintenance-case.md](maintenance-case.md)。真实业务值重名场景发现第三方符号表隔离缺陷，本轮已修复并增加回归测试；此前的通过记录仅表示当时用例集合通过，不能代替所有规范输入的兼容证明。
