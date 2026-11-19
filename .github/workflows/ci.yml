@@ -4,9 +4,13 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install MoonBit
@@ -36,3 +40,11 @@ jobs:
           cargo fmt --manifest-path tools/biscuit-rust-interop/Cargo.toml -- --check
           cargo test --manifest-path tools/biscuit-rust-interop/Cargo.toml
       - run: python tools/interop.py
+      - name: Preserve differential fixtures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-decisions
+          path: _build/interop-decisions.json
+          if-no-files-found: ignore
+          retention-days: 14

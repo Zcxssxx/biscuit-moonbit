@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import random
+import json
 import shutil
 import subprocess
 import sys
@@ -23,6 +25,8 @@ def run(command: list[str], env: dict[str, str] | None = None) -> str:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            timeout=180,
         )
     except subprocess.CalledProcessError as error:
         if error.stderr:
@@ -248,7 +252,60 @@ def main() -> None:
         "ALLOW",
     )
 
+    differential_decisions(rust_tokens["RUST_TOKEN"], rust_root)
     print("All bidirectional Biscuit interoperability checks passed.")
+
+
+def differential_decisions(token: str, root_key: str) -> None:
+    """Bounded seeded fixtures compare policy positions, checks and decisions."""
+    rng = random.Random(20261119)
+    results = []
+    for index in range(32):
+        numbers = sorted(rng.sample(range(20), rng.randrange(1, 7)))
+        cutoff = rng.randrange(20)
+        facts = "\n".join(f"number({n})" for n in numbers)
+        rules = "eligible($n) <- number($n), $n >= 10"
+        policies = [
+            f"deny if number($n), $n < {cutoff}",
+            "allow if eligible($n)",
+        ]
+        rng.shuffle(policies)
+        if index % 4 == 0:
+            policies = ["allow if number($n), $n > 100"]
+        checks = "check if false" if index % 7 == 0 else "check all number($n), $n >= 0"
+        expected = "NO_MATCH"
+        for position, policy in enumerate(policies):
+            matches = (
+                any(n < cutoff for n in numbers) if policy.startswith("deny")
+                else any(n >= 10 for n in numbers) if "eligible" in policy
+                else False
+            )
+            if matches:
+                expected = f"{'DENY' if policy.startswith('deny') else 'ALLOW'}:{position}"
+                break
+        if checks == "check if false":
+            expected = "CHECK_FAILED"
+        values = {
+            "BISCUIT_TOKEN": token,
+            "BISCUIT_ROOT_PUBLIC_KEY": root_key,
+            "BISCUIT_FACTS": facts,
+            "BISCUIT_RULES": rules,
+            "BISCUIT_CHECKS": checks,
+            "BISCUIT_POLICIES": "\n".join(policies),
+        }
+        env = os.environ.copy()
+        env.update(values)
+        moonbit_result = run(["moon", "run", "--target", "native", "examples/decision"], env)
+        rust_result = rust("decision", values)
+        fixture = {"index": index, "numbers": numbers, "cutoff": cutoff,
+                   "policies": policies, "checks": checks, "expected": expected,
+                   "moonbit": moonbit_result, "rust": rust_result}
+        results.append(fixture)
+        report = ROOT / "_build" / "interop-decisions.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps({"seed": 20261119, "cases": results}, indent=2) + "\n")
+        assert moonbit_result == rust_result == expected, f"differential mismatch: {fixture}"
+    print(f"Seeded decision differential: {len(results)}/32 passed (seed 20261119)")
 
 
 if __name__ == "__main__":

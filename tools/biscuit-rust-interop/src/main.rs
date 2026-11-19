@@ -47,6 +47,44 @@ fn run_parse_datalog() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_decision() -> Result<(), Box<dyn Error>> {
+    use biscuit_auth::error::{Logic, MatchedPolicy, Token};
+    let root = public_key(&required("BISCUIT_ROOT_PUBLIC_KEY")?)?;
+    let token = Biscuit::from_base64(required("BISCUIT_TOKEN")?, root)?;
+    let mut source = String::new();
+    for name in [
+        "BISCUIT_FACTS",
+        "BISCUIT_RULES",
+        "BISCUIT_CHECKS",
+        "BISCUIT_POLICIES",
+    ] {
+        for line in required(name)?.lines().filter(|line| !line.trim().is_empty()) {
+            source.push_str(line.trim());
+            source.push_str(";\n");
+        }
+    }
+    let mut authorizer = AuthorizerBuilder::new().code(source)?.build(&token)?;
+    let result = match authorizer.authorize() {
+        Ok(index) => format!("ALLOW:{index}"),
+        Err(Token::FailedLogic(Logic::Unauthorized { checks, .. })) if !checks.is_empty() => {
+            "CHECK_FAILED".to_owned()
+        }
+        Err(Token::FailedLogic(Logic::NoMatchingPolicy { checks })) if !checks.is_empty() => {
+            "CHECK_FAILED".to_owned()
+        }
+        Err(Token::FailedLogic(Logic::Unauthorized {
+            policy: MatchedPolicy::Deny(index),
+            ..
+        })) => {
+            format!("DENY:{index}")
+        }
+        Err(Token::FailedLogic(Logic::NoMatchingPolicy { .. })) => "NO_MATCH".to_owned(),
+        Err(error) => return Err(error.into()),
+    };
+    println!("{result}");
+    Ok(())
+}
+
 fn run_mint() -> Result<(), Box<dyn Error>> {
     let root = private_key(ROOT_SEED_HEX)?;
     let authority = Biscuit::builder()
@@ -113,6 +151,7 @@ fn run_append_moonbit_third_party() -> Result<(), Box<dyn Error>> {
 fn run() -> Result<(), Box<dyn Error>> {
     match env::args().nth(1).as_deref() {
         Some("authorize") => run_authorize(),
+        Some("decision") => run_decision(),
         Some("parse-datalog") => run_parse_datalog(),
         Some("mint") => run_mint(),
         Some("mint-third-party") => run_mint_third_party(),
