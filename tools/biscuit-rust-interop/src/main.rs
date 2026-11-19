@@ -58,7 +58,10 @@ fn run_decision() -> Result<(), Box<dyn Error>> {
         "BISCUIT_CHECKS",
         "BISCUIT_POLICIES",
     ] {
-        for line in required(name)?.lines().filter(|line| !line.trim().is_empty()) {
+        for line in required(name)?
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+        {
             source.push_str(line.trim());
             source.push_str(";\n");
         }

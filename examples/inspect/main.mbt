@@ -21,6 +21,6 @@ fn main {
     println("right(file1, read) matches: " + matches.length().to_string())
     println("Inspection only. This program made no authorization decision.")
   } catch {
-    _ => println("Token verification or fact inspection failed.")
+    _ => abort("令牌验证或事实检查示例失败")
   }
 }

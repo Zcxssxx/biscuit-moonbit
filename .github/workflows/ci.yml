@@ -24,6 +24,10 @@ jobs:
       - run: moon build
       - run: moon test
       - run: moon run examples/verify
+      - name: Validate authorization and inspection examples
+        run: |
+          moon run examples/authorize
+          moon run examples/inspect
       - name: Validate maintenance delegation business case
         run: moon run examples/maintenance
       - uses: actions/setup-python@v5

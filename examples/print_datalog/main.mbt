@@ -17,6 +17,6 @@ fn main {
       ";"
     println(source)
   } catch {
-    _ => println("Datalog printing failed")
+    _ => abort("Datalog 文本打印示例失败")
   }
 }

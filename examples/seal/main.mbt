@@ -15,6 +15,6 @@ fn main {
     )
     println(@biscuit.token_to_base64url(@biscuit.seal_token(token, root)))
   } catch {
-    _ => println("Sealing failed")
+    _ => abort("令牌封存示例失败")
   }
 }

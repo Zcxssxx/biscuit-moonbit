@@ -8,6 +8,6 @@ fn main {
     @biscuit.verify_signatures(token, root_key)
     println("Signature chain valid. No authorization decision was made.")
   } catch {
-    _ => println("Verification failed.")
+    _ => abort("签名验证示例失败")
   }
 }

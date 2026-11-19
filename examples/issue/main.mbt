@@ -31,6 +31,6 @@ fn main {
     )
     println(@biscuit.token_to_base64url(extended))
   } catch {
-    _ => println("Issuance failed")
+    _ => abort("令牌签发示例失败")
   }
 }

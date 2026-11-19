@@ -44,13 +44,13 @@ fn main {
         100,
         20,
       )
-      println("write file1: unexpectedly allowed")
+      abort("写请求被错误放行")
     } catch {
       @biscuit.FailedCheck(_) => println("write file1: denied by token check")
-      _ => println("write file1: denied")
+      _ => abort("写请求发生非预期错误")
     }
     println("The example uses the supported Datalog 3.0–3.3 Ed25519 profile.")
   } catch {
-    _ => println("Token construction or authorization failed.")
+    _ => abort("令牌创建或授权示例失败")
   }
 }
