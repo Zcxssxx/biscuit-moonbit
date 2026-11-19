@@ -118,3 +118,22 @@ moon test -f 'official*'
 - `moon run examples/maintenance`：10/10 场景符合预期（一个允许、九个拒绝）。
 
 业务案例是模拟集成原型。具体接入职责、工单流程、方案取舍和结果表见 [maintenance-case.md](maintenance-case.md)。代码提交 `fe10e680854301cf6a18bf16e5a75a483e317937` 的 [CI run 44439951220](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44439951220) 已成功：固定工具链格式检查、检查/构建/116 项测试、新业务案例、Rust helper 及原有双向互通全部通过。
+
+## 2026-11-19 第二轮优化验证
+
+代码提交 `e3296a0` 的 [CI run 44444274522](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44444274522) 成功。实际日志：
+
+```text
+Total tests: 118, passed: 118, failed: 0.
+业务验收：10/10 场景符合预期
+Seeded decision differential: 32/32 passed (seed 20261119)
+All bidirectional Biscuit interoperability checks passed.
+```
+
+原有 12 组双向授权对照及 Datalog parser 检查继续通过。新增差分使用固定 Rust 令牌和 32 组小型随机事实/规则/策略，独立 Python 预期值同时约束两侧结果：ALLOW:index、DENY:index、NO_MATCH、CHECK_FAILED。失败检查暂按类别归一化，不比较具体检查索引；不是任意表达式的模糊测试。JSON 输入与结果在 Actions artifact `interop-decisions` 中保存 14 天。
+
+本机实际运行 `moon check`、`moon test`（118/118）、`moon test -f 'official*'`（51/51）、`moon build`，以及 maintenance（10/10）、authorize、inspect 示例均成功。decision 适配器的 allow/deny/no-match/failed-check 四类本地烟雾检查通过；完整跨实现结果来自 CI。本机仍无 Cargo。Python 脚本 AST 解析检查通过，互通子进程明确以 UTF-8 处理输出。
+
+CI 使用固定 MoonBit 工具链通过 `moon fmt --check`；本机较新工具链保留弃用语法兼容说明。新增输入加固和来源索引的两个回归测试通过，公开 MoonBit API 未变动。
+
+首次 CI run 44444072510 在新增 Rust helper 的格式检查处失败；按其具体诊断修正后完成上述成功运行。没有将失败运行记作通过。

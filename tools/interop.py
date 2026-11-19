@@ -298,12 +298,18 @@ def differential_decisions(token: str, root_key: str) -> None:
         moonbit_result = run(["moon", "run", "--target", "native", "examples/decision"], env)
         rust_result = rust("decision", values)
         fixture = {"index": index, "numbers": numbers, "cutoff": cutoff,
+                   "facts": facts, "rules": rules,
                    "policies": policies, "checks": checks, "expected": expected,
                    "moonbit": moonbit_result, "rust": rust_result}
         results.append(fixture)
         report = ROOT / "_build" / "interop-decisions.json"
         report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(json.dumps({"seed": 20261119, "cases": results}, indent=2) + "\n")
+        report.write_text(json.dumps({
+            "seed": 20261119,
+            "test_token": token,
+            "root_public_key": root_key,
+            "cases": results,
+        }, indent=2) + "\n", encoding="utf-8")
         assert moonbit_result == rust_result == expected, f"differential mismatch: {fixture}"
     print(f"Seeded decision differential: {len(results)}/32 passed (seed 20261119)")
 

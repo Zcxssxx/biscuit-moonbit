@@ -29,7 +29,7 @@
 - 资源控制使用 facts、迭代、表达式步数和查询绑定的确定性上限；没有 wall-clock timeout API。
 - issue/attenuate/third-party/seal API 要求调用方提供安全生成的独立 seed；本库不内置 CSPRNG。
 - `hustcer/ed25519` 上游注明其实现未审计且不是 constant-time；本项目没有独立密码审计。
-- 跨实现用例固定在一个 Rust revision，没有随机 differential testing；尚未系统性比较所有失败 check/policy 索引和任意策略组合。
+- 跨实现用例固定在一个 Rust revision，新增 32 组 seeded differential testing，比较匹配 policy 索引；尚未系统性比较所有失败 check 索引和任意策略组合。
 - 解析错误提供类别与消息，尚无源码行列定位。
 
 ## 复审材料建议表述

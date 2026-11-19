@@ -43,7 +43,7 @@ Datalog block version 的映射为 3→3.0、4→3.1、5→3.2、6→3.3。超�
 
 本地命令及真实结果见 [conformance.md](conformance.md)。截至本次文档整理：
 
-- moon test：116 项通过，0 项失败。
+- moon test：118 项通过，0 项失败。
 - moon test -f 'official*'：51 项通过、0 项失败；其中 48 个 Ed25519 范围内授权场景及 1 项官方第三方签名验证符合预期。test036/test037 为预期 unsupported_token，范围外。
 - 固定 biscuit-rust 修订的 CI 双向互通通过 12 组授权结果对照，并成功解析 MoonBit 打印的 Datalog 文本。完整结果见 [conformance.md](conformance.md) 与 Actions run 43793900704。
 
@@ -54,3 +54,5 @@ issue、attenuate、third-party 与 seal API 要求调用方提供独立、新�
 本兼容性声明仅覆盖上述固定规范与 Rust 修订下的 Ed25519 配置，不代表 P-256、旧 token 格式、未知 protobuf 扩展或其他实现版本兼容。
 
 2026-11-19 补充：新增工厂日志委托案例和第三方符号表隔离回归测试。新案例的十个授权断言及运行证据见 [maintenance-case.md](maintenance-case.md) 和 [conformance.md](conformance.md)。
+
+本轮新增 32 组固定随机种子的小型授权差分，通过比较 allow/deny 策略索引、no-match 与 failed-check 类别。第三方 v1 签名请求拒绝旧字段、非 64-byte previous signature 和超大输入。详见 [optimization-2026-11-19.md](optimization-2026-11-19.md)。

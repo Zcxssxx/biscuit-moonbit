@@ -84,7 +84,7 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：116 项通过，0 项失败。
+- moon test：118 项通过，0 项失败。
 - `moon test -f 'official*'`：51 项通过、0 项失败。覆盖 38 个官方样例 ID 的 50 个授权场景，以及一项官方 test024 第三方块签名验证；其中 49 项属于 Ed25519 支持范围，2 个 P-256 场景按声明返回 `unsupported_token`，不计入兼容通过数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 
@@ -95,9 +95,11 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 - 项目使用的 hustcer/ed25519 0.6.1 依赖未经过本项目密码审计，其维护者标注实现未经审计且不是 constant-time。
 - Authorizer 为派生事实数量、迭代次数提供调用方可配置上限；表达式步骤和查询绑定有固定确定性上限。当前没有 wall-clock 超时参数。
 - token 输入最大 1 MiB、最多 128 个追加块；Datalog 值深度和集合大小也有限制。解析错误目前提供错误类别与消息，不提供源码行列位置。
-- 上游双向测试固定到一个 biscuit-rust revision，并覆盖确定的用例；尚无随机差分生成器，也未对两侧所有失败 check/policy 索引进行系统性差分。不能据此推断兼容所有 Biscuit 实现或未来版本。
+- 上游双向测试固定到一个 biscuit-rust revision。另有 seed=20261119 的 32 组小型授权输入差分，覆盖允许/拒绝的匹配策略索引、无匹配策略和失败 check 类别；未覆盖任意表达式组合、全部错误或失败 check 索引。不能据此推断兼容所有 Biscuit 实现或未来版本。
 - P-256/secp256r1 测例会被显式报告为 unsupported_token；不得将其计作通过。
 
 ## 来源与许可证
 
 本项目采用 Apache-2.0，见 [LICENSE](LICENSE)。规范基线、官方样例和 Rust 对照实现的修订、直接与传递依赖许可证、测试向量来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。审核基准、支持版本边界及逐项差距见 [docs/compatibility.md](docs/compatibility.md)、[docs/gap-analysis.md](docs/gap-analysis.md) 和 [docs/conformance.md](docs/conformance.md)。
+
+开发与复现流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全边界和问题反馈见 [SECURITY.md](SECURITY.md)。本轮输入加固、查询索引与测试改进记录见 [优化记录](docs/optimization-2026-11-19.md)。
