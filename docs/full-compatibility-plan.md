@@ -44,7 +44,7 @@
 
 ## 验收矩阵与参照程序
 
-新增 Rust helper 模式 `algorithm-matrix`，先建立可运行参照：root 算法 E/P × authority.nextKey E/P × 第三方签名 E/P，共 8 组；普通衰减切换 nextKey 算法，第三方块后再次设置 nextKey。每组验证审批前拒绝、审批后 read 允许、write 拒绝，并重新解码验签和封存验签。它输出公开测试令牌供后续 MoonBit 测试复用，**属于 Rust-only 参照，不是 MoonBit P-256 互通结果**。
+新增 Rust helper 模式 `algorithm-matrix`，先建立可运行参照：root 算法 E/P × authority.nextKey E/P × 第三方签名 E/P，共 8 组；000/111 保持纯 E/P，其余组合在普通衰减时切换 nextKey 算法，第三方块后再次设置 nextKey。每组验证审批前拒绝、审批后 read 允许、write 拒绝，并重新解码验签和封存验签。它输出公开测试令牌供后续 MoonBit 测试复用，**属于 Rust-only 参照，不是 MoonBit P-256 互通结果**。
 
 ```text
 cargo run --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix
@@ -59,3 +59,5 @@ MoonBit 后续必须执行矩阵同样流程的双向版本：Rust 生成→Moon
 若密码后端不能在固定工具链可靠编译或验证失败，应记录具体阻塞并调整后端方案；若到期仍未通过完整门槛，应如实报告未完成，不再把 Ed25519 子集称为最终标准兼容，也不承诺组委会一定通过。
 
 规范依据：[固定 SHA SPECIFICATIONS.md](https://github.com/eclipse-biscuit/biscuit/blob/b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639/SPECIFICATIONS.md) 的 Algorithms、Signed payload generation、Proof、Symbol/Public key tables；候选后端资料：[ECDSA API](https://mooncakes.io/docs/moonbitstack/mooncrypt/sign/ecdsa)。
+
+参照矩阵已在 [CI run 44705898333](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44705898333) 实际执行并成功，详见 [conformance.md](conformance.md)。该进展不改变 G1–G7 中 MoonBit P-256 尚待实现的状态。

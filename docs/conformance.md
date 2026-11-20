@@ -137,3 +137,19 @@ All bidirectional Biscuit interoperability checks passed.
 CI 使用固定 MoonBit 工具链通过 `moon fmt --check`；本机较新工具链保留弃用语法兼容说明。新增输入加固和来源索引的两个回归测试通过，公开 MoonBit API 未变动。
 
 首次 CI run 44444072510 在新增 Rust helper 的格式检查处失败；按其具体诊断修正后完成上述成功运行。没有将失败运行记作通过。
+
+## 2026-11-20 完整算法目标与参照矩阵
+
+最终兼容目标现已包含 P-256 和混合算法，不再把 Ed25519 配置作为最终范围。实现拆分、逐块密钥流程、后端资格验证和最终门槛见 [full-compatibility-plan.md](full-compatibility-plan.md)。
+
+提交 `38a7541` 的 [CI run 44705898333](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44705898333) 成功，实际执行固定工具链的格式、检查、构建、118 项测试、业务案例、原互通/32 组差分，以及新增命令：
+
+```text
+cargo run --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix
+```
+
+新增步骤成功退出，覆盖 root E/P × authority.nextKey E/P × external E/P 共 8 个组合，其中 000/111 分别保持纯 E/P，其他组合切换后续 key 算法；每组检查缺失审批拒绝、审批后 read 允许、write 拒绝，以及重新解码验证和 seal 验证。公开测试令牌与结论保存在 Actions artifact 的 `algorithm-reference.txt` 中，保留 14 天。
+
+这是 **biscuit-rust 自身的算法参照矩阵**，不是 MoonBit P-256 测试。MoonBit 当前仍拒绝 test036/test037，对应两项不支持断言没有变成标准兼容通过；最终验收必须让其真实授权结果与官方一致，并完成 MoonBit↔Rust 的 P-256/混合链双向测试。本机没有 Cargo，未声称本地运行该 Rust 矩阵。
+
+首个 run 44705746005 因新增 helper 的 Rust 格式检查失败；修正后上述 run 成功。未以配置存在或失败运行代替通过证据。
