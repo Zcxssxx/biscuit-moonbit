@@ -2,7 +2,7 @@
 
 ## 数据与信任边界
 
-`SignatureAlgorithm` 包含 `Ed25519` 与 `Secp256r1`。`SigningKey` 携带 algorithm 和 secret；`VerificationKey` 携带 algorithm 和标准公钥 key。P-256 secret 是有效范围内的 32-byte 大端标量，不是任意长度口令；公钥是 33-byte 压缩 SEC1 点。不得仅凭 token 的根 key ID 自动选择信任根。
+`SignatureAlgorithm` 包含 `Ed25519` 与 `Secp256r1`。`SigningKey` 携带 algorithm 和 secret；`VerificationKey` 携带 algorithm 和标准公钥 key。P-256 secret 是有效范围内的 32-byte 大端标量，不是任意长度口令；公钥是 33-byte 压缩 SEC1 点。不得仅凭 token 的根 key ID 自动选择信任根。不同算法也必须使用独立 secret，不能把同一字节序列用于 root 和 next 或相邻 proof key；签发和追加会拒绝可直接比较的此类复用。
 
 P-256 后端固定为 `moonbitstack/mooncrypt 0.3.1/sign/ecdsa`，使用默认 P256/SHA-256 和 RFC6979 签名。项目将后端的 `r||s` 转为协议 DER，验签前严格验证 DER 正整数、长度和最短编码，再转换回后端格式；非法点和标量明确拒绝。密码库及本适配层没有独立安全审计。
 

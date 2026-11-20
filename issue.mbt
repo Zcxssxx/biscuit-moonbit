@@ -46,7 +46,7 @@ pub fn issue_raw_with_keys(
   if root_seed.length() != 32 || next_seed.length() != 32 {
     raise Malformed("seed must be 32 bytes")
   }
-  if root.algorithm == next.algorithm && root_seed == next_seed {
+  if root_seed == next_seed {
     raise Malformed("root and next seed must be different")
   }
   let next_key = pack_key(verification_key(next)) catch {
@@ -202,7 +202,7 @@ fn append_raw_with_external(
     raise Unsupported("sealed token")
   }
   let secret = pr.bytes()
-  if key_algorithm(last.next_key) == next.algorithm && secret == next_seed {
+  if secret == next_seed {
     raise Malformed("next seed must be fresh")
   }
   let next_key = pack_key(verification_key(next)) catch {

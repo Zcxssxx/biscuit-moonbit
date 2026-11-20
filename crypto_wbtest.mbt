@@ -1,4 +1,38 @@
 ///|
+test "mixed algorithms cannot reuse signing secret bytes as proof" {
+  let secret = Bytes::make(32, b'\x41')
+  let root = SigningKey::{ algorithm: Ed25519, secret, }
+  let rejected = try {
+    ignore(
+      issue_with_keys([], [], [], [], 6, root, { algorithm: Secp256r1, secret, }),
+    )
+    false
+  } catch {
+    Malformed(_) => true
+    _ => false
+  }
+  assert_true(rejected)
+  let proof = Bytes::make(32, b'\x42')
+  let token = issue_with_keys([], [], [], [], 6, root, {
+    algorithm: Ed25519,
+    secret: proof,
+  })
+  let reuse = try {
+    ignore(
+      attenuate_with_key(token, verification_key(root), [], [], [], [], 6, {
+        algorithm: Secp256r1,
+        secret: proof,
+      }),
+    )
+    false
+  } catch {
+    Malformed(_) => true
+    _ => false
+  }
+  assert_true(reuse)
+}
+
+///|
 test "P-256 backend DER roundtrip and malformed inputs" {
   let signing = SigningKey::{
     algorithm: Secp256r1,

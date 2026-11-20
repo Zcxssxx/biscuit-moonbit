@@ -181,3 +181,7 @@ Bidirectional algorithm matrix: 8/8 passed
 每组算法矩阵验证：MoonBit 签发和封存→Rust 验证授权；Rust 追加 MoonBit token→MoonBit 继续追加→Rust 再验证；Rust 签发→MoonBit 衰减→Rust 验证；Rust sealed token→MoonBit 验证且拒绝追加。各 token 都携带外部签名块，read 允许、write 拒绝。000 为纯 E，111 为纯 P，其余跨算法切换；对应 JSON artifact 为 `algorithm-interop.json`。
 
 密码后端单测覆盖签名/DER 往返、消息篡改、非法 DER、零标量和非法曲线点。另有 P-256 外部签名跨令牌重放拒绝、错算法根公钥拒绝、scope 文本往返。仍非完整密码审计或任意输入穷举；P-256 签名算法为 SHA-256/RFC6979，不能据此宣称常量时间。本机没有 Cargo，双向互通结论来自上述 CI，不记作本地 Rust 通过。
+
+后续提交 `9d79030` 的 [CI run 44708900216](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44708900216) 再次全流程通过，实测 120 项测试，包含跨令牌签名绑定负向测试、第三方 contents 编解码以及 8/8 双向算法矩阵。
+
+最后补充跨算法 secret 复用拒绝：即使 root/next 或 current/next 采用不同算法，相同 secret 字节也不可作为新 proof 复用，以避免转交 proof 时暴露上游签名 secret。新增回归测试本地通过；完整本地总数为 121/121，官方筛选维持 52/52。签发 API 只检查可直接比较的 secret；宿主仍必须为每次签发/追加提供独立新鲜密钥。
