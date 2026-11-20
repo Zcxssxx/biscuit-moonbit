@@ -1,14 +1,14 @@
 # Biscuit MoonBit
 
-Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当前 protobuf v3、Datalog 3.0–3.3 和 Ed25519。项目包含令牌签发、验证、衰减、封存、第三方块签署与追加，以及来源感知的 Authorizer。
+Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当前 protobuf v3、Datalog 3.0–3.3 和 Ed25519 / P-256。项目包含令牌签发、验证、衰减、封存、第三方块签署与追加，以及来源感知的 Authorizer。
 
 项目仍为实验性实现，尚未进行独立密码审计。发布前请阅读“安全边界”；示例中的固定密钥是公开测试数据，不能用于保护真实资源。
 
 ## 最终兼容目标与当前进度
 
-最终交付目标是固定规范修订下的完整当前标准兼容：Biscuit protobuf v3、Datalog 3.0–3.3、Ed25519 与 P-256/secp256r1，包括纯算法和混合算法令牌的签发、衰减、第三方块、封存与授权。Ed25519 是当前已实现里程碑，P-256 尚未在 MoonBit 中集成，不能视作最终范围的永久排除。
+当前已实现固定规范下的 Ed25519、P-256/secp256r1 及混合算法签名链，覆盖签发、验证、衰减、第三方块、封存与授权。MoonBit 使用 mooncrypt 的 P-256 密码运算，协议、DER/SEC1 适配、签名链与授权求值由本项目实现。
 
-逐项实施方案、P→P／E→P→E／P→E→P 流程、双向验收矩阵和截止前阶段安排见 [完整标准兼容计划](docs/full-compatibility-plan.md)。新增 Rust-only `algorithm-matrix` 建立参照令牌，不代表 MoonBit 已支持 P-256。下表继续记录当前已实现状态。
+官方 test036/test037 已按授权成功断言通过；MoonBit↔固定版本 biscuit-rust 的 8 组算法组合实际互通通过。实现和验收过程见 [完整兼容计划与结果](docs/full-compatibility-plan.md)，命令与 CI 证据见 [一致性记录](docs/conformance.md)。这不是独立密码安全审计或所有输入的兼容性证明。
 
 ## 支持范围
 
@@ -19,13 +19,13 @@ Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当
 | Biscuit 外层格式 | 当前 protobuf v3；Datalog block version 3、4、5、6 分别对应 Datalog 3.0、3.1、3.2、3.3 |
 | Datalog 值 | 整数、字符串、日期、字节、布尔、null、数组、集合、字符串或整数键映射 |
 | Datalog 求值 | 规范表达式、严格与宽松比较、算术与溢出检查、字符串/集合/数组/映射运算、正则、短路、any/all 闭包、try_or 和 FFI |
-| 作用域与衰减 | authority、previous、Ed25519 trusting 公钥；块、规则、查询/检查级作用域；衰减块可含事实、规则和检查 |
-| 签名与令牌操作 | Ed25519 签名 payload v0/v1 验证；v1 签发与追加；unsealed/sealed proof 验证；seal_token 创建 sealed token |
-| 第三方块 | Ed25519 request、签名、contents 编解码、追加、验证和 trusting 公钥授权 |
+| 作用域与衰减 | authority、previous、Ed25519 / P-256 trusting 公钥；块、规则、查询/检查级作用域；衰减块可含事实、规则和检查 |
+| 签名与令牌操作 | Ed25519 / P-256 签名 payload v0/v1 验证；v1 签发与追加；unsealed/sealed proof 验证；seal_token 创建 sealed token |
+| 第三方块 | Ed25519 / P-256 request、签名、contents 编解码、追加、验证和 trusting 公钥授权 |
 | Authorizer | token 与调用方事实/规则/check、check if/check all/reject if、首个匹配 allow/deny 策略、详细策略决策和结构化错误 |
 | 文本与传输 | Datalog fact/rule/check/policy/表达式和值解析和打印；Base64URL token 文本 |
 
-P-256/secp256r1、Biscuit 外层旧格式 v0/v1/v2 不在当前支持范围。未知 protobuf 字段按严格策略拒绝；兼容性边界详见 [docs/compatibility.md](docs/compatibility.md)。
+Biscuit 外层旧格式 v0/v1/v2 不在当前标准版本范围。未知 protobuf 字段按严格策略拒绝；兼容性边界详见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 快速开始
 
@@ -85,13 +85,28 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 
 可运行示例位于 examples/。底层 issue_raw/append_raw 接收预序列化数据，不校验其 Datalog 语义；一般使用应优先选择结构化 API。
 
+## P-256 与混合算法 API
+
+`SigningKey` / `VerificationKey` 显式携带 `Ed25519` 或 `Secp256r1`。前者 secret 为 32 字节 Ed25519 seed 或 32 字节大端 P-256 标量（须在有效范围内）；后者 key 为标准 32 字节 Ed25519 公钥或 33 字节压缩 SEC1 P-256 公钥。
+
+- `verification_key`：从私钥导出带算法的公钥。
+- `issue_with_keys`：结构化签发，root 和 next 可以使用不同算法。
+- `attenuate_with_key`：追加 facts/rules/checks/scopes，并选择下一把 proof key 的算法。
+- `verify_with_key` / `authorize_with_key` / `seal_with_key`：带算法根公钥的验签、授权与封存。
+- `third_party_request_with_key` / `sign_third_party_with_key` / `append_third_party_with_key`：任意两种算法组合的第三方请求、签署与追加。
+- `trust_verification_key`、`external_verification_key`：构造公钥作用域、读取第三方签名者的标准公钥。
+
+旧 API 继续接受 Ed25519 字节，默认生成下一把 Ed25519 key。内部为兼容旧字节字段使用私有带标签表示；调用方应通过上述类型 API 传递标准公钥，不手工拼装内部表示。
+
+运行全部算法的可复现双向验收：`python tools/algorithm_interop.py`（需要 Cargo 和 native 编译环境）。详细用法见 [算法接入说明](docs/algorithm-api.md)。
+
 ## 验证与互操作
 
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：118 项通过，0 项失败。
-- `moon test -f 'official*'`：51 项通过、0 项失败。覆盖 38 个官方样例 ID 的 50 个授权场景，以及一项官方 test024 第三方块签名验证；其中 49 项属于 Ed25519 支持范围，2 个 P-256 场景按声明返回 `unsupported_token`，不计入兼容通过数。
+- moon test：120 项通过，0 项失败。
+- `moon test -f 'official*'`：52 项通过、0 项失败，覆盖 38 个官方样例 ID 的 50 个授权场景和 2 项签名验证，包含 P-256 的 test036/test037，不再以 unsupported 计数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 
 ## 安全边界
@@ -102,7 +117,7 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 - Authorizer 为派生事实数量、迭代次数提供调用方可配置上限；表达式步骤和查询绑定有固定确定性上限。当前没有 wall-clock 超时参数。
 - token 输入最大 1 MiB、最多 128 个追加块；Datalog 值深度和集合大小也有限制。解析错误目前提供错误类别与消息，不提供源码行列位置。
 - 上游双向测试固定到一个 biscuit-rust revision。另有 seed=20261119 的 32 组小型授权输入差分，覆盖允许/拒绝的匹配策略索引、无匹配策略和失败 check 类别；未覆盖任意表达式组合、全部错误或失败 check 索引。不能据此推断兼容所有 Biscuit 实现或未来版本。
-- P-256/secp256r1 测例会被显式报告为 unsupported_token；不得将其计作通过。
+- P-256 使用 moonbitstack/mooncrypt 0.3.1；未经过本项目独立密码/侧信道审计，不宣称常量时间实现。
 
 ## 来源与许可证
 

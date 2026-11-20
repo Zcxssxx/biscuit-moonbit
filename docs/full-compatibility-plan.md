@@ -1,6 +1,6 @@
-# 最终标准兼容目标与 P-256 实施验收计划
+# 最终标准兼容目标与 P-256 实施验收记录
 
-更新：2026-11-20。本文回应本轮初审意见；区分最终交付目标、已实现状态与参照测试，不把计划当成实现结果。
+更新：2026-11-20。G1–G7 的 P-256 与混合链实现已落地；官方样例和实际 MoonBit↔Rust 8 组矩阵通过。下文保留实施拆分与最终目标，进度以本段及 conformance.md 的最新结果为准。
 
 ## 最终目标及固定基准
 
@@ -10,13 +10,13 @@
 
 “完整”限于上述修订的当前标准，不等于支持所有历史外层格式、废弃的 external signature payload v0 或未知未来扩展。普通区块签名 payload v0/v1 按基准规范及官方样例校验；新签发使用 v1，第三方签名使用 v1。资源限制可以拒绝超限输入，但必须明确报错、公开限制，不得把规范内缺失能力静默忽略。
 
-**当前状态：** MoonBit 仍只实现 Ed25519。P-256 的压缩公钥、DER 签名、密钥类型、混合链、proof 和公钥作用域尚未集成。此前 118 项测试及 51 项官方断言的结果仍有效，其中两个 P-256 不支持断言不算标准兼容通过。此范围是当前里程碑，已取消把它作为最终交付范围的设定。
+**当前状态：** MoonBit 已集成 Ed25519 与 P-256，包括压缩 SEC1 公钥、严格 DER 编解码、带算法密钥类型、混合链、proof、两算法公钥作用域。官方 test036/test037 已取消 unsupported 预期并按真实授权成功通过。新增 typed API 和双向用例见 [algorithm-api.md](algorithm-api.md)。
 
 ## 算法实现约束
 
 规范算法编号为 Ed25519=0、SECP256R1=1。P-256 使用 SHA-256、33-byte 压缩 SEC1 公钥（02/03 前缀）、大端私有标量及 ASN.1 DER 编码的 `(r,s)` 签名。不能将 P-256 签名按 Ed25519 的固定 64 字节处理，也不能把原始 `r||s` 直接放入协议。
 
-拟先建立独立密码适配层，评估纯 MoonBit P-256 库（例如 moonbitstack/mooncrypt 的 ECDSA 包），锁定一个经实际编译、许可证核验和向量验证的版本后再引入。候选包有 API 文档不等于已通过本项目验收；目前没有新增该依赖。密码运算可依赖成熟算法库，协议编解码、签名 payload、来源隔离和 Datalog/Authorizer 继续由 MoonBit 实现。Rust helper 仅作为对照，不作为 MoonBit 授权运行时。
+已建立独立密码适配层，固定 `moonbitstack/mooncrypt 0.3.1/sign/ecdsa`，已在本机及固定 CI 工具链编译；依赖许可证和版本见 THIRD_PARTY_NOTICES.md。密码运算使用该库，协议编解码、DER 适配、签名 payload、来源隔离和 Datalog/Authorizer 由 MoonBit 实现。Rust helper 仅作对照。后端通过签名互验和非法输入测试不代表独立安全审计。
 
 后端验收包含已知签名向量、Rust 双向签名验证、非法点/前缀/长度、零值或越界标量、DER 非法长度/整数和签名篡改。不以自行拼装未经验证的曲线运算赶进度。
 
@@ -60,4 +60,10 @@ MoonBit 后续必须执行矩阵同样流程的双向版本：Rust 生成→Moon
 
 规范依据：[固定 SHA SPECIFICATIONS.md](https://github.com/eclipse-biscuit/biscuit/blob/b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639/SPECIFICATIONS.md) 的 Algorithms、Signed payload generation、Proof、Symbol/Public key tables；候选后端资料：[ECDSA API](https://mooncakes.io/docs/moonbitstack/mooncrypt/sign/ecdsa)。
 
-参照矩阵已在 [CI run 44705898333](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44705898333) 实际执行并成功，详见 [conformance.md](conformance.md)。该进展不改变 G1–G7 中 MoonBit P-256 尚待实现的状态。
+参照矩阵已在 [CI run 44705898333](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44705898333) 实际执行并成功，详见 [conformance.md](conformance.md)。该次是实施前的参照结果；当前 MoonBit 实现状态和双向结果见下一节。
+
+## 实现验收结果
+
+代码提交 `14f7b9e` 的 [CI run 44708002028](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44708002028) 成功，新增 `python tools/algorithm_interop.py` 的 000–111 八组均 PASS。这次是 MoonBit 与 Rust 相互签发/验证、交替衰减、两算法第三方块和 seal 验证，不再只是 Rust-only 参照。本地后续新增签名绑定和算法混淆负向测试，最新通过数与 CI 见 [conformance.md](conformance.md)。
+
+原日期安排为实施前计划，现由实际实现结果取代；密码审计、完整错误索引差分和生产接入仍是已知边界。

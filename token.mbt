@@ -1005,9 +1005,9 @@ pub fn external_signature_payload_v1(
 }
 
 ///|
-/// Verify the signature chain and final proof of an Ed25519 Biscuit token.
+/// Verify the signature chain and final proof with per-key algorithm dispatch.
 /// This does NOT evaluate the token's checks or authorize a request.
-/// Unsupported algorithms and third-party blocks are rejected.
+/// Ed25519 and P-256 third-party blocks are verified; unknown algorithms fail closed.
 fn verify_signed_chain(
   token : Bytes,
   root_key : Bytes,

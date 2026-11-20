@@ -1,6 +1,6 @@
 # 一致性与互操作记录
 
-最后核对：2026-11-16。本文只记录已实际执行的本地命令和 GitHub Actions 结果。
+当前结果见文末 2026-11-20 P-256 实现验收；此前章节为历史运行记录，Ed25519-only 与 unsupported 统计不再代表当前范围。本文只记录实际命令与 CI 结果。
 
 ## 固定基线
 
@@ -153,3 +153,31 @@ cargo run --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algor
 这是 **biscuit-rust 自身的算法参照矩阵**，不是 MoonBit P-256 测试。MoonBit 当前仍拒绝 test036/test037，对应两项不支持断言没有变成标准兼容通过；最终验收必须让其真实授权结果与官方一致，并完成 MoonBit↔Rust 的 P-256/混合链双向测试。本机没有 Cargo，未声称本地运行该 Rust 矩阵。
 
 首个 run 44705746005 因新增 helper 的 Rust 格式检查失败；修正后上述 run 成功。未以配置存在或失败运行代替通过证据。
+
+## 2026-11-20 P-256 / 混合算法实现验收（当前）
+
+MoonBit 实现已支持 Ed25519、P-256、混合链、两算法第三方块、typed key、DER/SEC1、proof 与封存。API 和测试流程见 [algorithm-api.md](algorithm-api.md)。
+
+本地实际执行：`moon check`、`moon info`、`moon fmt`、`moon build` 成功；`moon test` 120/120；`moon test -f 'official*'` 52/52。52 项包括 38 个官方 ID 的 50 个授权场景和 test024/test036 两项签名验证；test036/test037 现在按授权成功断言，不再有范围外 P-256 项。
+
+实现提交 `14f7b9e` 的 [CI run 44708002028](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44708002028) 全流程通过，实际日志包括：
+
+```text
+Total tests: 119, passed: 119, failed: 0.
+Seeded decision differential: 32/32 passed (seed 20261119)
+MoonBit / Rust algorithm matrix 000: PASS
+MoonBit / Rust algorithm matrix 001: PASS
+MoonBit / Rust algorithm matrix 010: PASS
+MoonBit / Rust algorithm matrix 011: PASS
+MoonBit / Rust algorithm matrix 100: PASS
+MoonBit / Rust algorithm matrix 101: PASS
+MoonBit / Rust algorithm matrix 110: PASS
+MoonBit / Rust algorithm matrix 111: PASS
+Bidirectional algorithm matrix: 8/8 passed
+```
+
+119 是该提交的实测数；之后新增的一项 P-256 签名跨令牌绑定/算法混淆/作用域往返回归，使本地总数为 120，不混写两个版本的结果。该测试与 contents 编解码往返将随后续提交在 CI 再验收。
+
+每组算法矩阵验证：MoonBit 签发和封存→Rust 验证授权；Rust 追加 MoonBit token→MoonBit 继续追加→Rust 再验证；Rust 签发→MoonBit 衰减→Rust 验证；Rust sealed token→MoonBit 验证且拒绝追加。各 token 都携带外部签名块，read 允许、write 拒绝。000 为纯 E，111 为纯 P，其余跨算法切换；对应 JSON artifact 为 `algorithm-interop.json`。
+
+密码后端单测覆盖签名/DER 往返、消息篡改、非法 DER、零标量和非法曲线点。另有 P-256 外部签名跨令牌重放拒绝、错算法根公钥拒绝、scope 文本往返。仍非完整密码审计或任意输入穷举；P-256 签名算法为 SHA-256/RFC6979，不能据此宣称常量时间。本机没有 Cargo，双向互通结论来自上述 CI，不记作本地 Rust 通过。

@@ -54,6 +54,8 @@ pub fn evaluate_policy_set_with_externals(Array[Fact], Array[Check], Array[Polic
 
 pub fn external_signature_payload_v1(Bytes, Bytes) -> Bytes
 
+pub fn external_verification_key(ExternalSignature) -> VerificationKey raise TokenError
+
 pub fn issue(Array[Fact], Array[Rule], Array[Check], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError

@@ -1,62 +1,35 @@
 # 兼容性范围
 
-审计基线：2026-11-15。本文记录当前已实现并测试的支持配置，不把未支持算法或未来目标写成已支持能力。
+更新：2026-11-20。以下为当前实现状态；此前 Ed25519 里程碑记录保留在 conformance.md 的历史章节。
 
-## 最终交付范围（2026-11-20 修订）
+## 基准与最终目标
 
-最终目标调整为固定规范下的完整当前标准兼容，覆盖 Ed25519、P-256/secp256r1、混合算法签名链及对应第三方块/proof/授权。下面矩阵是当前实现状态，不再作为最终范围排除 P-256 的依据。P-256 目前仍未集成，test036/test037 仍是未完成项；通过 Rust-only 参照矩阵不等于 MoonBit 完成。实施步骤与最终验收条件见 [full-compatibility-plan.md](full-compatibility-plan.md)。
+规范、schema.proto、samples/current 固定为 `eclipse-biscuit/biscuit@b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639`；Rust 对照固定为 `eclipse-biscuit/biscuit-rust@2273077e2fcabeb8c03474125b4d96d57df6b4f7`（7.0.0-alpha.3）。最终目标为该修订的完整当前标准兼容，已实现的 P-256 与混合链证据见 [conformance.md](conformance.md)。不将单次测试集合通过视为所有输入的兼容证明。
 
-## 对标版本
+## 当前支持矩阵
 
-- Biscuit 规范、schema.proto 与 samples/current：eclipse-biscuit/biscuit，修订 b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639。
-- 跨实现基准：eclipse-biscuit/biscuit-rust，修订 2273077e2fcabeb8c03474125b4d96d57df6b4f7，biscuit-auth 7.0.0-alpha.3。
-- 该修订的 official samples/current 清单有 38 个样例 ID。测试覆盖 50 个授权结果场景，并额外验证 test024 的官方第三方块签名，共 51 项。
-- 本项目工具链：moon 0.1.20261023，moonc 0.10.17+d971670cd；CI 从 .moonbit-toolchain 安装相同编译器版本。
-
-## 版本与算法矩阵
-
-| 协议层 | 支持声明 | 实测/限制 |
+| 层次 | 已实现 | 证据与边界 |
 | --- | --- | --- |
-| 外层 token protobuf | 当前 Biscuit v3 格式 | 解析并验证已知字段；输入上限 1 MiB、最多 128 个追加块。未知字段与未知变体拒绝，不承诺前向兼容。 |
-| Datalog 3.0 | block version 3 | 基础事实、规则、作用域、表达式和授权语义；纳入官方 current 样例。 |
-| Datalog 3.1 | block version 4 | 版本门控表达式与检查语义；纳入官方 current 样例。 |
-| Datalog 3.2 | block version 5 | 显式作用域、trusting 公钥和第三方 Ed25519 block；第三方 block 最低版本要求为 3.2。 |
-| Datalog 3.3 | block version 6 | null、array、map、type、try_or 及相应表达式语义；纳入官方 current 样例。 |
-| 区块签名 payload | Ed25519 v0/v1 | 验证两种 payload；本项目新签发与追加使用 v1。payload 版本不等于外层 token 版本。 |
-| Proof | Ed25519 unsealed/sealed | 两种 proof 均验证；seal_token 将已验证 token 封存。sealed token 不能再追加衰减块。 |
-| 第三方签名 | Ed25519 | 支持请求、contents、外部签名验证、追加、trusting 公钥与授权；不支持第三方 P-256。 |
-| P-256/secp256r1 | 不支持 | 官方 test036、test037 返回 unsupported_token，按范围外单独记录，不计兼容通过。 |
-| 旧外层 token v0/v1/v2 | 不支持 | 即使某区块签名 payload v0 可验证，也不代表支持旧外层令牌格式。 |
+| 外层格式 | 当前 protobuf v3，已知 schema 字段 | 未知字段严格拒绝；旧外层 v0/v1/v2 不支持 |
+| Datalog 3.0–3.3 | block version 3–6，值、表达式、规则、checks、scopes、Authorizer | 38 个官方 ID 的 50 个授权场景全部按期望通过 |
+| Ed25519 | v0/v1 payload 验证、v1 签发/追加、第三方块、sealed/unsealed proof | 保留原有字节 API；签名 64 bytes |
+| P-256/secp256r1 | SHA-256、压缩 SEC1 公钥、DER 签名、大端私有标量；同样的令牌操作 | 固定 mooncrypt 0.3.1 后端；官方 test036/test037 通过 |
+| 混合签名链 | root、各 nextKey、外部签名可分别选择 E/P；proof 使用最后 nextKey 的算法 | 8 组 MoonBit↔Rust 矩阵，纯 P、E→P、P→E、交替追加和封存验证 |
+| 第三方块 | 两算法请求/签名/contents 解析与序列化、追加、来源隔离 | P-256 scope 文本往返；跨令牌复用签名拒绝；两算法签名标签不可互换 |
+| 传输 | canonical Base64URL，支持正确 padding 与无 padding 输入 | 表示解码不等于签名验证或授权 |
 
-Datalog block version 的映射为 3→3.0、4→3.1、5→3.2、6→3.3。超出此范围的版本明确报错。
+签名 payload v0 是当前格式中的兼容项，不代表支持旧外层格式。新第三方签名使用 v1，不接受废弃的 external signature payload v0。
 
-## 核心功能边界
+## API 与资源边界
 
-- 值类型：整数、字符串、秒精度日期、字节、布尔、null、数组、集合、映射；映射键支持字符串和整数。协议解析最大嵌套深度 16；文本解析最大深度 32，集合/数组/映射各最多 1024 项。
-- 表达式：比较、严格/宽松相等、整数算术与溢出、逻辑短路/急切布尔、位运算、字符串前后缀/包含/正则、集合交并、数组/映射访问、长度/类型、外部函数、any/all 闭包和 try_or。类型错误、除零、溢出、非法正则、未绑定变量、闭包遮蔽与步骤耗尽有结构化错误。
-- 文本 API：fact、predicate、Datalog 值、表达式、规则、check if/check all/reject if、allow/deny policy 的解析与打印；已覆盖 parse-print-parse 结构往返。表达式打印器拒绝无法用当前文本语法表示的非法 AST。
-- 作用域：authority、previous、Ed25519 公钥；支持 block、rule 与 query/check scope。默认及显式作用域用于决定事实来源可见性。
-- 衰减块：可带事实、规则、检查和 block scope；派生事实携带来源，检查和策略依据可见来源集查询。
-- Authorizer：执行 token 与调用方事实/规则/check，按顺序使用首个匹配 allow/deny policy；check 失败、拒绝策略、无匹配策略、无效令牌、表达式错误和资源耗尽均有结构化变体。authorize_token_detailed 返回匹配策略类别和索引。
-- 执行限制：调用方设置最大事实数和迭代数；每条表达式固定最多 10,000 个求值步骤，每个查询最多 10,000 个绑定。无 wall-clock 超时 API。
-- Base64URL：输出为带正确 padding 的 URL 安全编码；解码接受规范的有 padding/无 padding形式，并校验字符、大小和规范性。解码本身不验证签名。
-- Root key ID 只保留为提示；验证 API 始终要求调用方明确传入可信 root public key。
-- unknown protobuf fields 按严格策略拒绝；解析诊断返回类别与消息，没有行列位置。
+新 API 使用 `SigningKey` / `VerificationKey` 显式携带算法；`issue_with_keys`、`attenuate_with_key`、`authorize_with_key` 等见 [algorithm-api.md](algorithm-api.md)。原有 Ed25519 API 的默认行为保留。
+
+输入 token 最大 1 MiB、最多 128 个追加块；协议值嵌套深度 16，文本深度 32，集合/数组/映射最多 1024 项。facts/iterations 由调用方设限；每条表达式最多 10,000 步、查询最多 10,000 绑定，无 wall-clock timeout。日期文本打印限四位年份；错误提供类别和消息，尚无源码行列定位。
+
+FFI handler、可信根选择、真实 ambient facts、安全随机数、密钥管理、身份绑定与即时撤销由宿主实现。Ed25519 seed 和 P-256 scalar 均须独立、安全生成；P-256 scalar 要在有效范围内，不能把任意口令直接作为密钥。
+
+两套密码后端均未由本项目接受独立密码/侧信道审计。Rust helper 尚无 Cargo.lock；CI 对照固定 Biscuit revision，但间接 Rust 依赖没有完整锁定。
 
 ## 测试状态
 
-本地命令及真实结果见 [conformance.md](conformance.md)。截至本次文档整理：
-
-- moon test：118 项通过，0 项失败。
-- moon test -f 'official*'：51 项通过、0 项失败；其中 48 个 Ed25519 范围内授权场景及 1 项官方第三方签名验证符合预期。test036/test037 为预期 unsupported_token，范围外。
-- 固定 biscuit-rust 修订的 CI 双向互通通过 12 组授权结果对照，并成功解析 MoonBit 打印的 Datalog 文本。完整结果见 [conformance.md](conformance.md) 与 Actions run 43793900704。
-
-## 安全与版本声明
-
-issue、attenuate、third-party 与 seal API 要求调用方提供独立、新鲜的 32-byte seeds；本项目不替代系统 CSPRNG。公开示例密钥只能用于测试。Ed25519 依赖 hustcer/ed25519 0.6.1 未在本项目接受密码审计，且维护者说明实现不是 constant-time。
-
-本兼容性声明仅覆盖上述固定规范与 Rust 修订下的 Ed25519 配置，不代表 P-256、旧 token 格式、未知 protobuf 扩展或其他实现版本兼容。
-
-2026-11-19 补充：新增工厂日志委托案例和第三方符号表隔离回归测试。新案例的十个授权断言及运行证据见 [maintenance-case.md](maintenance-case.md) 和 [conformance.md](conformance.md)。
-
-本轮新增 32 组固定随机种子的小型授权差分，通过比较 allow/deny 策略索引、no-match 与 failed-check 类别。第三方 v1 签名请求拒绝旧字段、非 64-byte previous signature 和超大输入。详见 [optimization-2026-11-19.md](optimization-2026-11-19.md)。
+本地 120 项测试通过；官方筛选 52 项通过（50 个授权场景 + test024/test036 两项签名验证），不再有“预期不支持 P-256”计数。已执行的 CI 和双向结果详见 [conformance.md](conformance.md)。固定 seed 的 32 组小型授权差分比较匹配策略索引及错误类别，不覆盖全部失败检查索引或任意表达式。

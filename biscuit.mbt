@@ -1,5 +1,5 @@
 ///|
-/// Construct the version 1 Ed25519 authority-block signature payload.
+/// Construct the version 1 authority payload from a legacy or internally tagged key.
 /// This only constructs bytes; it does not verify a token or authorize access.
 pub fn authority_payload_v1(data : Bytes, next_key : Bytes) -> Bytes {
   b"\x00BLOCK\x00\x00VERSION\x00\x01\x00\x00\x00\x00PAYLOAD\x00" +

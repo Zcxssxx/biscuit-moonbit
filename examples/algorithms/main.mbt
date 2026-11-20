@@ -111,10 +111,12 @@ fn main {
       let approved = @biscuit.append_third_party_with_key(
         narrowed,
         public_root,
-        @biscuit.ThirdPartyBlockContents::{
-          payload,
-          external_signature: signed,
-        },
+        @biscuit.parse_third_party_block(
+          @biscuit.serialize_third_party_block(@biscuit.ThirdPartyBlockContents::{
+            payload,
+            external_signature: signed,
+          }),
+        ),
         @biscuit.SigningKey::{
           algorithm: root_algorithm,
           secret: Bytes::make(32, b'\x25'),

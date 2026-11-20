@@ -1,4 +1,15 @@
 ///|
+/// Return the standard public-key bytes and explicit algorithm of an external signer.
+pub fn external_verification_key(
+  signature : ExternalSignature,
+) -> VerificationKey raise TokenError {
+  {
+    algorithm: key_algorithm(signature.public_key),
+    key: key_bytes(signature.public_key),
+  }
+}
+
+///|
 pub fn trust_verification_key(
   key : VerificationKey,
 ) -> TrustScope raise TokenError {

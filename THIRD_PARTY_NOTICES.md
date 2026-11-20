@@ -17,6 +17,12 @@
 | [moonbitlang/x](https://github.com/moonbitlang/x) | 0.5.5 | 经 `hustcer/ed25519` 引入 | Apache-2.0 | 版本见 MoonBit 依赖元数据 |
 | [moonbitlang/core](https://github.com/moonbitlang/core) | 工具链自带 | 标准库 | Apache-2.0 | 用于集合、字符串、编码与测试 |
 
+## P-256 密码后端（2026-11-20 新增）
+
+- [moonbitstack/mooncrypt](https://github.com/moonbitstack/mooncrypt) 0.3.1，Apache-2.0：直接依赖 `sign/ecdsa`，提供 P256/SHA-256、RFC6979、SEC1 点处理；本项目实现协议 DER 适配及算法分派。未由本项目独立审计，不宣称常量时间。
+- 模块声明的传递依赖 [moonbitstack/moonbase](https://github.com/moonbitstack/moonbase) 0.4.0 与 [moonbitstack/moondate](https://github.com/moonbitstack/moondate) 0.1.0，均按安装包 moon.mod / LICENSE 确认为 Apache-2.0。
+- 新增适配代码独立按规范编写，没有复制密码后端曲线算法源码；后端通过 Mooncakes 固定版本导入。
+
 ## Rust 测试辅助工具依赖
 
 仅 CI 互操作 helper 使用以下 Rust crate，不作为 MoonBit 库的运行时依赖：
