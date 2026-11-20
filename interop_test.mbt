@@ -324,15 +324,8 @@ test "third-party request signing and append roundtrip" {
 }
 
 ///|
-test "unsupported secp256r1 blocks are rejected" {
-  let accepted = try {
-    @biscuit.verify_signatures(test036_secp256r1, root_key)
-    true
-  } catch {
-    @biscuit.Unsupported(_) => false
-    _ => abort("expected Unsupported")
-  }
-  assert_false(accepted)
+test "official secp256r1 signature chains verify" {
+  @biscuit.verify_signatures(test036_secp256r1, root_key)
 }
 
 ///|

@@ -25,25 +25,37 @@ pub fn issue_raw(
   root_seed : Bytes,
   next_seed : Bytes,
 ) -> Bytes raise TokenError {
+  issue_raw_with_keys(
+    authority_block,
+    { algorithm: Ed25519, secret: root_seed, },
+    { algorithm: Ed25519, secret: next_seed, },
+  )
+}
+
+///|
+pub fn issue_raw_with_keys(
+  authority_block : Bytes,
+  root : SigningKey,
+  next : SigningKey,
+) -> Bytes raise TokenError {
+  let root_seed = root.secret
+  let next_seed = next.secret
   if authority_block.length() > 1048000 {
     raise Malformed("authority block too large")
   }
   if root_seed.length() != 32 || next_seed.length() != 32 {
     raise Malformed("seed must be 32 bytes")
   }
-  if root_seed == next_seed {
+  if root.algorithm == next.algorithm && root_seed == next_seed {
     raise Malformed("root and next seed must be different")
   }
-  let next_key = @ed25519.derive_public_key(next_seed) catch {
+  let next_key = pack_key(verification_key(next)) catch {
     _ => raise Malformed("invalid next seed")
   }
-  let sig = @ed25519.sign(
-    root_seed,
-    authority_payload_v1(authority_block, next_key),
-  ) catch {
+  let sig = crypto_sign(root, authority_payload_v1(authority_block, next_key)) catch {
     _ => raise Malformed("invalid root seed")
   }
-  let key = b"\x08\x00" + encode_bytes_field(b'\x12', next_key)
+  let key = encode_public_key(next_key)
   let block = encode_bytes_field(b'\x0a', authority_block) +
     encode_bytes_field(b'\x12', key) +
     encode_bytes_field(b'\x1a', sig) +
@@ -93,8 +105,14 @@ pub fn seal_token(token : Bytes, root_key : Bytes) -> Bytes raise TokenError {
   }
 
   let last = blocks[blocks.length() - 1]
-  let payload = last.data + b"\x00\x00\x00\x00" + last.next_key + last.signature
-  let signature = @ed25519.sign(secret, payload) catch {
+  let payload = last.data +
+    algorithm_bytes(last.next_key) +
+    key_bytes(last.next_key) +
+    last.signature
+  let signature = crypto_sign(
+    { algorithm: key_algorithm(last.next_key), secret, },
+    payload,
+  ) catch {
     _ => raise Malformed("could not seal token")
   }
   let sealed_proof = encode_bytes_field(b'\x12', signature)
@@ -116,7 +134,13 @@ pub fn append_raw(
   block_data : Bytes,
   next_seed : Bytes,
 ) -> Bytes raise TokenError {
-  append_raw_with_external(token, root_key, block_data, next_seed, None)
+  append_raw_with_external(
+    token,
+    root_key,
+    block_data,
+    { algorithm: Ed25519, secret: next_seed, },
+    None,
+  )
 }
 
 ///|
@@ -124,10 +148,11 @@ fn append_raw_with_external(
   token : Bytes,
   root_key : Bytes,
   block_data : Bytes,
-  next_seed : Bytes,
+  next : SigningKey,
   external_signature : ExternalSignature?,
 ) -> Bytes raise TokenError {
   verify_signatures(token, root_key)
+  let next_seed = next.secret
   if next_seed.length() != 32 {
     raise Malformed("seed must be 32 bytes")
   }
@@ -177,10 +202,10 @@ fn append_raw_with_external(
     raise Unsupported("sealed token")
   }
   let secret = pr.bytes()
-  if secret == next_seed {
+  if key_algorithm(last.next_key) == next.algorithm && secret == next_seed {
     raise Malformed("next seed must be fresh")
   }
-  let next_key = @ed25519.derive_public_key(next_seed) catch {
+  let next_key = pack_key(verification_key(next)) catch {
     _ => raise Malformed("invalid next seed")
   }
   let unsigned = SignedBlock::{
@@ -190,13 +215,13 @@ fn append_raw_with_external(
     version: 1,
     external_signature,
   }
-  let signature = @ed25519.sign(
-    secret,
+  let signature = crypto_sign(
+    { algorithm: key_algorithm(last.next_key), secret, },
     block_payload(unsigned, Some(last.signature)),
   ) catch {
     _ => raise Malformed("invalid proof secret")
   }
-  let key = b"\x08\x00" + encode_bytes_field(b'\x12', next_key)
+  let key = encode_public_key(next_key)
   let block = encode_bytes_field(b'\x0a', block_data) +
     encode_bytes_field(b'\x12', key) +
     encode_bytes_field(b'\x1a', signature) +
@@ -236,6 +261,19 @@ pub fn sign_third_party_request(
   block_data : Bytes,
   external_seed : Bytes,
 ) -> ExternalSignature raise TokenError {
+  sign_third_party_with_key(request, block_data, {
+    algorithm: Ed25519,
+    secret: external_seed,
+  })
+}
+
+///|
+pub fn sign_third_party_with_key(
+  request : Bytes,
+  block_data : Bytes,
+  external : SigningKey,
+) -> ExternalSignature raise TokenError {
+  let external_seed = external.secret
   if request.length() > MAX_TOKEN_SIZE || block_data.length() > MAX_TOKEN_SIZE {
     raise Malformed("third-party signing input exceeds 1 MiB")
   }
@@ -257,17 +295,17 @@ pub fn sign_third_party_request(
     Some(value) => value
     None => raise Malformed("third-party request has no previous signature")
   }
-  if previous.length() != 64 {
-    raise Malformed("previous signature must be 64 bytes")
+  if previous.length() != 64 && signature_raw(previous) is None {
+    raise Malformed("invalid previous signature encoding")
   }
-  let public_key = @ed25519.derive_public_key(external_seed) catch {
+  let public_key = pack_key(verification_key(external)) catch {
     _ => raise Malformed("invalid third-party seed")
   }
   let payload = external_signature_payload_v1(block_data, previous)
-  let signature = @ed25519.sign(external_seed, payload) catch {
+  let signature = crypto_sign(external, payload) catch {
     _ => raise Malformed("could not create third-party signature")
   }
-  let key_message = b"\x08\x00" + encode_bytes_field(b'\x12', public_key)
+  let key_message = encode_public_key(public_key)
   let encoded = encode_bytes_field(b'\x0a', signature) +
     encode_bytes_field(b'\x12', key_message)
   { public_key, signature, encoded, }
@@ -331,12 +369,29 @@ pub fn append_third_party_block(
   next_seed : Bytes,
   external_signature : ExternalSignature,
 ) -> Bytes raise TokenError {
+  append_third_party_typed(
+    token,
+    root_key,
+    block_data,
+    { algorithm: Ed25519, secret: next_seed, },
+    external_signature,
+  )
+}
+
+///|
+fn append_third_party_typed(
+  token : Bytes,
+  root_key : Bytes,
+  block_data : Bytes,
+  next : SigningKey,
+  external_signature : ExternalSignature,
+) -> Bytes raise TokenError {
   let blocks = verify_signed_chain(token, root_key)
   if blocks.length() == 0 {
     raise Malformed("token contains no blocks")
   }
   let previous = blocks[blocks.length() - 1].signature
-  if !@ed25519.verify(
+  if !crypto_verify(
       external_signature.public_key,
       external_signature_payload_v1(block_data, previous),
       external_signature.signature,
@@ -349,7 +404,7 @@ pub fn append_third_party_block(
     ) +
     encode_bytes_field(
       b'\x12',
-      b"\x08\x00" + encode_bytes_field(b'\x12', external_signature.public_key),
+      encode_public_key(external_signature.public_key),
     )
   let canonical = {
     public_key: external_signature.public_key,
@@ -360,13 +415,7 @@ pub fn append_third_party_block(
   if datalog.version < 5 {
     raise Unsupported("third-party blocks require Datalog version 3.2")
   }
-  append_raw_with_external(
-    token,
-    root_key,
-    block_data,
-    next_seed,
-    Some(canonical),
-  )
+  append_raw_with_external(token, root_key, block_data, next, Some(canonical))
 }
 
 ///|

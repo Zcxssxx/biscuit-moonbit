@@ -46,6 +46,8 @@ jobs:
       - run: python tools/interop.py
       - name: Validate Rust-only P-256 and mixed-algorithm reference matrix
         run: cargo run --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix > _build/algorithm-reference.txt
+      - name: Validate bidirectional P-256 and mixed-algorithm interoperability
+        run: python tools/algorithm_interop.py
       - name: Preserve differential fixtures
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,5 +56,6 @@ jobs:
           path: |
             _build/interop-decisions.json
             _build/algorithm-reference.txt
+            _build/algorithm-interop.json
           if-no-files-found: ignore
           retention-days: 14

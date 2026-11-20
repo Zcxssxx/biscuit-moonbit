@@ -12,9 +12,15 @@ pub fn append_serialized_third_party_block(Bytes, Bytes, Bytes, Bytes) -> Bytes 
 
 pub fn append_third_party_block(Bytes, Bytes, Bytes, Bytes, ExternalSignature) -> Bytes raise TokenError
 
+pub fn append_third_party_with_key(Bytes, VerificationKey, ThirdPartyBlockContents, SigningKey) -> Bytes raise TokenError
+
+pub fn append_with_key(Bytes, VerificationKey, Bytes, SigningKey) -> Bytes raise TokenError
+
 pub fn attenuate(Bytes, Bytes, Array[Check], Int32, Bytes) -> Bytes raise TokenError
 
 pub fn attenuate_block(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, Bytes) -> Bytes raise TokenError
+
+pub fn attenuate_with_key(Bytes, VerificationKey, Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, SigningKey) -> Bytes raise TokenError
 
 pub fn authority_payload_v1(Bytes, Bytes) -> Bytes
 
@@ -25,6 +31,8 @@ pub fn authorize_token_detailed(Bytes, Bytes, Array[Fact], Array[Rule], Array[Ch
 pub fn authorize_token_with_checks(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32) -> Unit raise AuthorizationError
 
 pub fn authorize_token_with_externals(Bytes, Bytes, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> Unit raise AuthorizationError
+
+pub fn authorize_with_key(Bytes, VerificationKey, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> AuthorizationResult raise AuthorizationError
 
 pub fn build_third_party_block(Bytes, Bytes, Bytes) -> ThirdPartyBlockContents raise TokenError
 
@@ -49,6 +57,10 @@ pub fn external_signature_payload_v1(Bytes, Bytes) -> Bytes
 pub fn issue(Array[Fact], Array[Rule], Array[Check], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
 pub fn issue_raw(Bytes, Bytes, Bytes) -> Bytes raise TokenError
+
+pub fn issue_raw_with_keys(Bytes, SigningKey, SigningKey) -> Bytes raise TokenError
+
+pub fn issue_with_keys(Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, SigningKey, SigningKey) -> Bytes raise TokenError
 
 pub fn issue_with_scopes(Array[Fact], Array[Rule], Array[Check], Array[TrustScope], Int32, Bytes, Bytes) -> Bytes raise TokenError
 
@@ -94,13 +106,23 @@ pub fn print_value(Value) -> String raise TokenError
 
 pub fn seal_token(Bytes, Bytes) -> Bytes raise TokenError
 
+pub fn seal_with_key(Bytes, VerificationKey) -> Bytes raise TokenError
+
 pub fn serialize_third_party_block(ThirdPartyBlockContents) -> Bytes
 
 pub fn sign_third_party_request(Bytes, Bytes, Bytes) -> ExternalSignature raise TokenError
 
+pub fn sign_third_party_with_key(Bytes, Bytes, SigningKey) -> ExternalSignature raise TokenError
+
+pub fn third_party_request_with_key(Bytes, VerificationKey) -> Bytes raise TokenError
+
 pub fn token_from_base64url(String) -> Bytes raise TokenError
 
 pub fn token_to_base64url(Bytes) -> String
+
+pub fn trust_verification_key(VerificationKey) -> TrustScope raise TokenError
+
+pub fn verification_key(SigningKey) -> VerificationKey raise TokenError
 
 pub fn verify_authority_facts(Bytes, Bytes) -> Array[Fact] raise TokenError
 
@@ -109,6 +131,8 @@ pub fn verify_block_facts(Bytes, Bytes) -> Array[VerifiedBlockFacts] raise Token
 pub fn verify_block_programs(Bytes, Bytes) -> Array[VerifiedBlockProgram] raise TokenError
 
 pub fn verify_signatures(Bytes, Bytes) -> Unit raise TokenError
+
+pub fn verify_with_key(Bytes, VerificationKey) -> Unit raise TokenError
 
 // Errors
 pub suberror AuthorizationError {
@@ -302,6 +326,16 @@ pub(all) struct Rule {
 pub fn Rule::equal(Self, Self) -> Bool
 pub fn Rule::not_equal(Self, Self) -> Bool
 
+pub(all) enum SignatureAlgorithm {
+  Ed25519
+  Secp256r1
+} derive(Eq)
+
+pub(all) struct SigningKey {
+  algorithm : SignatureAlgorithm
+  secret : Bytes
+}
+
 pub(all) struct ThirdPartyBlockContents {
   payload : Bytes
   external_signature : ExternalSignature
@@ -341,6 +375,11 @@ pub fn Value::equal(Self, Self) -> Bool
 pub fn Value::not_equal(Self, Self) -> Bool
 pub fn Value::to_repr(Self) -> @debug.Repr
 pub impl Eq for Value
+
+pub(all) struct VerificationKey {
+  algorithm : SignatureAlgorithm
+  key : Bytes
+}
 
 pub(all) struct VerifiedBlockFacts {
   index : Int32

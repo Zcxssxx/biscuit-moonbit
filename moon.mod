@@ -27,4 +27,5 @@ description = "An experimental Biscuit authorization token implementation for Mo
 
 import {
   "hustcer/ed25519@0.6.1",
+  "moonbitstack/mooncrypt@0.3.1",
 }

@@ -912,6 +912,7 @@ fn parse_key(data : Bytes) -> Bytes raise TokenError {
   match (algorithm, key) {
     (Some(0), Some(k)) if k.length() == 32 => k
     (Some(0), Some(_)) => raise Malformed("invalid public key length")
+    (Some(1), Some(k)) => pack_key({ algorithm: Secp256r1, key: k, })
     (Some(_), _) => raise Unsupported("public key algorithm")
     _ => raise Malformed("missing public key field")
   }
@@ -938,7 +939,8 @@ fn parse_block(data : Bytes) -> SignedBlock raise TokenError {
     }
   }
   match (content, key, signature) {
-    (Some(d), Some(k), Some(s)) if s.length() == 64 => {
+    (Some(d), Some(k), Some(s)) if s.length() == 64 ||
+      signature_raw(s) is Some(_) => {
       let v = version.unwrap_or(0)
       if v != 0 && v != 1 {
         raise Unsupported("signature payload version")
@@ -962,7 +964,8 @@ fn parse_external_signature(data : Bytes) -> ExternalSignature raise TokenError 
     }
   }
   match (signature, public_key) {
-    (Some(sig), Some(key)) if sig.length() == 64 =>
+    (Some(sig), Some(key)) if (key.length() == 32 && sig.length() == 64) ||
+      (key.length() == 34 && signature_raw(sig) is Some(_)) =>
       { public_key: key, signature: sig, encoded: data, }
     (Some(_), Some(_)) => raise Malformed("invalid external signature length")
     _ => raise Malformed("missing external signature field")
@@ -972,7 +975,7 @@ fn parse_external_signature(data : Bytes) -> ExternalSignature raise TokenError 
 ///|
 fn block_payload(block : SignedBlock, previous : Bytes?) -> Bytes {
   if block.version == 0 {
-    block.data + b"\x00\x00\x00\x00" + block.next_key
+    block.data + algorithm_bytes(block.next_key) + key_bytes(block.next_key)
   } else {
     let payload = authority_payload_v1(block.data, block.next_key)
     match previous {
@@ -1012,9 +1015,7 @@ fn verify_signed_chain(
   if token.length() > 1048576 {
     raise Malformed("token exceeds 1 MiB")
   }
-  if root_key.length() != 32 {
-    raise Malformed("invalid root key length")
-  }
+  ignore(key_algorithm(root_key))
   let r = Reader::{ data: token, pos: 0, }
   let mut authority : SignedBlock? = None
   let blocks : Array[SignedBlock] = []
@@ -1044,7 +1045,7 @@ fn verify_signed_chain(
   if first.external_signature is Some(_) {
     raise Malformed("authority block cannot carry an external signature")
   }
-  if !@ed25519.verify(root_key, block_payload(first, None), first.signature) {
+  if !crypto_verify(root_key, block_payload(first, None), first.signature) {
     raise InvalidSignature
   }
   let mut last = first
@@ -1059,13 +1060,13 @@ fn verify_signed_chain(
           raise Unsupported("third-party blocks require Datalog version 3.2")
         }
         let payload = external_signature_payload_v1(block.data, last.signature)
-        if !@ed25519.verify(external.public_key, payload, external.signature) {
+        if !crypto_verify(external.public_key, payload, external.signature) {
           raise InvalidSignature
         }
       }
       None => ()
     }
-    if !@ed25519.verify(
+    if !crypto_verify(
         last.next_key,
         block_payload(block, Some(last.signature)),
         block.signature,
@@ -1087,7 +1088,12 @@ fn verify_signed_chain(
   }
   match tag {
     10 => {
-      let derived = @ed25519.derive_public_key(value) catch {
+      let derived = pack_key(
+        verification_key({
+          algorithm: key_algorithm(last.next_key),
+          secret: value,
+        }),
+      ) catch {
         _ => raise Malformed("invalid proof secret")
       }
       if derived != last.next_key {
@@ -1096,10 +1102,10 @@ fn verify_signed_chain(
     }
     18 => {
       let payload = last.data +
-        b"\x00\x00\x00\x00" +
-        last.next_key +
+        algorithm_bytes(last.next_key) +
+        key_bytes(last.next_key) +
         last.signature
-      if !@ed25519.verify(last.next_key, payload, value) {
+      if !crypto_verify(last.next_key, payload, value) {
         raise InvalidSignature
       }
     }

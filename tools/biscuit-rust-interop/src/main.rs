@@ -215,6 +215,35 @@ fn run_algorithm_matrix() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_algorithm_check(append: bool) -> Result<(), Box<dyn Error>> {
+    let root_algorithm = if required("ROOT_ALGORITHM")? == "0" {
+        Algorithm::Ed25519
+    } else {
+        Algorithm::Secp256r1
+    };
+    let root = PublicKey::from_bytes(&hex::decode(required("ROOT_KEY")?)?, root_algorithm)?;
+    let token = Biscuit::from_base64(required("TOKEN")?, root)?;
+    if !authorize(&token, "right(\"read\")")? || authorize(&token, "right(\"write\")")? {
+        return Err("algorithm check authorization mismatch".into());
+    }
+    if append {
+        let next_algorithm = if required("NEXT_ALGORITHM")? == "0" {
+            Algorithm::Ed25519
+        } else {
+            Algorithm::Secp256r1
+        };
+        let next = PrivateKey::from_bytes(&[0x27; 32], next_algorithm)?;
+        let narrowed = token.append_with_key(
+            &next,
+            BlockBuilder::new().code("check if right(\"read\");")?,
+        )?;
+        println!("TOKEN={}", narrowed.to_base64()?);
+    } else {
+        println!("VALID");
+    }
+    Ok(())
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
     match env::args().nth(1).as_deref() {
         Some("authorize") => run_authorize(),
@@ -223,6 +252,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("mint") => run_mint(),
         Some("mint-third-party") => run_mint_third_party(),
         Some("algorithm-matrix") => run_algorithm_matrix(),
+        Some("algorithm-verify") => run_algorithm_check(false),
+        Some("algorithm-append") => run_algorithm_check(true),
         Some("append-moonbit-third-party") => run_append_moonbit_third_party(),
         _ => {
             Err("expected authorize, parse-datalog, mint, mint-third-party, or append-moonbit-third-party".into())

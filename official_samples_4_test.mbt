@@ -104,7 +104,7 @@ test "official test036_secp256r1 default" {
     "EqoBCj0KBWZpbGUxCgVmaWxlMhgDIg0KCwgEEgMYgAgSAhgAIg0KCwgEEgMYgQgSAhgAIg0KCwgEEgMYgAgSAhgBEiUIARIhAl6Rj9RGODKuooI9_ZcWo2tNmxN3vVPdgt30wLx17Wu_GkBii5ptdMyAs-zlC-_R9fDwJcCjXVFwiy53wRrtX5aLk7QJbIftgWlgVxbek04VVEPxQDNNcXCPzEJH5aClGLMNKAEaoAEKKwoBMBgDMiQKIgoCCBsSBwgCEgMIgggSBggDEgIYABILCAQSAwiCCBICGAASJQgBEiECeinoORyx61y3ivjAJBoGxxPifjTXblt2UEPC6fKpkO4aSDBGAiEAtgZ0hUoSgUzDbIqrlgDB2fnTFg4jNLcsD-7eWlYhPqUCIQCk9Lvy3DOzCSZ685_OdmEgF922Fx6c0qOqioU_RfFnXygBIiIKIMpB2rCFkO2kQjG2_PS7EQyFKyTwML-ZaonwLMzFfrXx",
     "resource(\"file1\");\noperation(\"read\");\n\nallow if true;\n", false,
   )
-  assert_eq(actual, "unsupported_token")
+  assert_eq(actual, "ok")
 }
 
 ///|
@@ -113,7 +113,7 @@ test "official test037_secp256r1_third_party default" {
     "EvMBCoUBCgVmaWxlMQoFZmlsZTIKCmZyb21fdGhpcmQYBCINCgsIBBIDGIAIEgIYACINCgsIBBIDGIEIEgIYACINCgsIBBIDGIAIEgIYATITChEKAggbEgcIgggSAjABIgIQAEIlCAESIQJekY_URjgyrqKCPf2XFqNrTZsTd71T3YLd9MC8de1rvxIlCAESIQJ6Keg5HLHrXLeK-MAkGgbHE-J-NNduW3ZQQ8Lp8qmQ7hpAcPVAIghRb9RM_J3z38_AoyfukATxgB7Qp6vcu66SPVZt3NLUoU9GIrNXMsTlOK8EB1zGerCIj6LYkjzGaBh_DygBGqkCCkIKCmZyb21fdGhpcmQKATAYBSIJCgcIgAgSAjABMiQKIgoCCBsSBwgCEgMIgQgSBggDEgIYABILCAQSAwiBCBICGAASJQgBEiEDWXF6b4k4hpY0JjWTwteUu-xf0gEUble-8xcsWss4dB0aRzBFAiB5P5VmXZr2RjOVA6BzZw6iw1JFnSosLhTFdWX2x-r2vAIhAMzK38N-RnVfUrsFTtIG1zNQZ4hd9ZmmlDHbQOM_M9TPInEKSDBGAiEAj4IMLrzZSCh2-8BtWuxvacvRR8UXkx09U-_2OurqtcECIQDaYRaEIORsMELO0L5iUUOxJX57qnNyYTQL-h0H2UUBRRIlCAESIQJekY_URjgyrqKCPf2XFqNrTZsTd71T3YLd9MC8de1rvygBIiIKIBNqxOSPGQXWl_gZ30-ipBICflmg7-hPtzBaQOf-nStX",
     "resource(\"file1\");\noperation(\"read\");\n\nallow if true;\n", false,
   )
-  assert_eq(actual, "unsupported_token")
+  assert_eq(actual, "ok")
 }
 
 ///|

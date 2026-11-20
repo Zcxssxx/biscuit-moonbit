@@ -920,8 +920,13 @@ pub fn parse_trust_scopes(text : String) -> Array[TrustScope] raise TokenError {
         }
         TrustPublicKey(key)
       }
-      _ if entry.has_prefix("secp256r1/") =>
-        raise Unsupported("P-256 scope public keys are not supported")
+      _ if entry.has_prefix("secp256r1/") => {
+        let encoded = String::from_array(entry.to_array()[10:])
+        let key = @hex.decode(encoded) catch {
+          _ => raise Malformed("invalid P-256 scope key")
+        }
+        TrustPublicKey(pack_key({ algorithm: Secp256r1, key, }))
+      }
       _ => raise Malformed("unknown trusted-origin scope")
     }
     if !scopes.contains(scope) {

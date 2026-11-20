@@ -238,6 +238,8 @@ fn print_scopes(scopes : Array[TrustScope]) -> String raise TokenError {
       TrustAuthority => "authority"
       TrustPrevious => "previous"
       TrustPublicKey(key) if key.length() == 32 => "ed25519/" + @hex.encode(key)
+      TrustPublicKey(key) if key.length() == 34 && key[0] == b'\x01' =>
+        "secp256r1/" + @hex.encode(key_bytes(key))
       TrustPublicKey(_) =>
         raise Malformed("scope Ed25519 public key must be 32 bytes")
     }

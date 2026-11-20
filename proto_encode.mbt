@@ -33,7 +33,7 @@ fn EncoderSymbols::intern_public_key(
   self : EncoderSymbols,
   key : Bytes,
 ) -> UInt64 raise TokenError {
-  if key.length() != 32 {
+  if key.length() != 32 && key.length() != 34 {
     raise Malformed("scope Ed25519 public key must be 32 bytes")
   }
   let identity = @hex.encode(key)
@@ -44,7 +44,7 @@ fn EncoderSymbols::intern_public_key(
         raise Malformed("block public key table exceeds 1024 entries")
       }
       let index = self.public_keys.length().to_uint64()
-      let encoded = b"\x08\x00" + encode_bytes_field64(18, key)
+      let encoded = encode_public_key(key)
       self.public_keys.push(encoded)
       self.public_key_indices[identity] = index
       index
