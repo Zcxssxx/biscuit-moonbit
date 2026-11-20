@@ -176,7 +176,9 @@ fn run_algorithm_matrix() -> Result<(), Box<dyn Error>> {
                 };
                 let scope = format!("{name}/{}", external.public().to_bytes_hex());
                 let base = Biscuit::builder()
-                    .code(format!("right(\"read\"); check if approval(true) trusting {scope};"))?
+                    .code(format!(
+                        "right(\"read\"); check if approval(true) trusting {scope};"
+                    ))?
                     .build_with_key_pair(&root, SymbolTable::default(), &next)?;
                 if authorize(&base, "right(\"read\")")? {
                     return Err("missing third-party approval was accepted".into());
@@ -185,12 +187,14 @@ fn run_algorithm_matrix() -> Result<(), Box<dyn Error>> {
                     &following,
                     BlockBuilder::new().code("check if right(\"read\");")?,
                 )?;
-                let response = attenuated.third_party_request()?.create_block(
-                    &external,
-                    BlockBuilder::new().fact("approval(true)")?,
+                let response = attenuated
+                    .third_party_request()?
+                    .create_block(&external, BlockBuilder::new().fact("approval(true)")?)?;
+                let approved = attenuated.append_third_party_with_key(
+                    external.public(),
+                    response,
+                    final_key,
                 )?;
-                let approved =
-                    attenuated.append_third_party_with_key(external.public(), response, final_key)?;
                 let sealed = approved.seal()?;
                 for token in [&approved, &sealed] {
                     let verified = Biscuit::from_base64(token.to_base64()?, root.public())?;
