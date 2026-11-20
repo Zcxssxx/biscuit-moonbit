@@ -151,6 +151,66 @@ fn run_append_moonbit_third_party() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// Reference-only fixtures. Passing this matrix does not mean MoonBit supports P-256.
+fn run_algorithm_matrix() -> Result<(), Box<dyn Error>> {
+    use biscuit_auth::datalog::SymbolTable;
+    let algorithms = [Algorithm::Ed25519, Algorithm::Secp256r1];
+    for (root_index, root_algorithm) in algorithms.iter().enumerate() {
+        for (next_index, next_algorithm) in algorithms.iter().enumerate() {
+            for (external_index, external_algorithm) in algorithms.iter().enumerate() {
+                let root = PrivateKey::from_bytes(&[0x21; 32], *root_algorithm)?;
+                let next = PrivateKey::from_bytes(&[0x22; 32], *next_algorithm)?;
+                let following_algorithm =
+                    if root_index == next_index && root_index == external_index {
+                        *next_algorithm
+                    } else {
+                        algorithms[1 - next_index]
+                    };
+                let following = PrivateKey::from_bytes(&[0x23; 32], following_algorithm)?;
+                let external = PrivateKey::from_bytes(&[0x24; 32], *external_algorithm)?;
+                let final_key = PrivateKey::from_bytes(&[0x25; 32], *root_algorithm)?;
+                let name = if external_index == 0 {
+                    "ed25519"
+                } else {
+                    "secp256r1"
+                };
+                let scope = format!("{name}/{}", external.public().to_bytes_hex());
+                let base = Biscuit::builder()
+                    .code(format!("right(\"read\"); check if approval(true) trusting {scope};"))?
+                    .build_with_key_pair(&root, SymbolTable::default(), &next)?;
+                if authorize(&base, "right(\"read\")")? {
+                    return Err("missing third-party approval was accepted".into());
+                }
+                let attenuated = base.append_with_key(
+                    &following,
+                    BlockBuilder::new().code("check if right(\"read\");")?,
+                )?;
+                let response = attenuated.third_party_request()?.create_block(
+                    &external,
+                    BlockBuilder::new().fact("approval(true)")?,
+                )?;
+                let approved =
+                    attenuated.append_third_party_with_key(external.public(), response, final_key)?;
+                let sealed = approved.seal()?;
+                for token in [&approved, &sealed] {
+                    let verified = Biscuit::from_base64(token.to_base64()?, root.public())?;
+                    if !authorize(&verified, "right(\"read\")")?
+                        || authorize(&verified, "right(\"write\")")?
+                    {
+                        return Err("algorithm matrix authorization mismatch".into());
+                    }
+                }
+                println!("REFERENCE_MATRIX {root_index}{next_index}{external_index}: PASS");
+                println!("REFERENCE_ROOT={}", root.public().to_bytes_hex());
+                println!("REFERENCE_TOKEN={}", approved.to_base64()?);
+                println!("REFERENCE_SEALED={}", sealed.to_base64()?);
+            }
+        }
+    }
+    println!("Rust-only algorithm reference matrix: 8/8 passed");
+    Ok(())
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
     match env::args().nth(1).as_deref() {
         Some("authorize") => run_authorize(),
@@ -158,6 +218,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("parse-datalog") => run_parse_datalog(),
         Some("mint") => run_mint(),
         Some("mint-third-party") => run_mint_third_party(),
+        Some("algorithm-matrix") => run_algorithm_matrix(),
         Some("append-moonbit-third-party") => run_append_moonbit_third_party(),
         _ => {
             Err("expected authorize, parse-datalog, mint, mint-third-party, or append-moonbit-third-party".into())

@@ -2,6 +2,10 @@
 
 审计基线：2026-11-15。本文记录当前已实现并测试的支持配置，不把未支持算法或未来目标写成已支持能力。
 
+## 最终交付范围（2026-11-20 修订）
+
+最终目标调整为固定规范下的完整当前标准兼容，覆盖 Ed25519、P-256/secp256r1、混合算法签名链及对应第三方块/proof/授权。下面矩阵是当前实现状态，不再作为最终范围排除 P-256 的依据。P-256 目前仍未集成，test036/test037 仍是未完成项；通过 Rust-only 参照矩阵不等于 MoonBit 完成。实施步骤与最终验收条件见 [full-compatibility-plan.md](full-compatibility-plan.md)。
+
 ## 对标版本
 
 - Biscuit 规范、schema.proto 与 samples/current：eclipse-biscuit/biscuit，修订 b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639。

@@ -44,11 +44,15 @@ jobs:
           cargo fmt --manifest-path tools/biscuit-rust-interop/Cargo.toml -- --check
           cargo test --manifest-path tools/biscuit-rust-interop/Cargo.toml
       - run: python tools/interop.py
+      - name: Validate Rust-only P-256 and mixed-algorithm reference matrix
+        run: cargo run --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix > _build/algorithm-reference.txt
       - name: Preserve differential fixtures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: interop-decisions
-          path: _build/interop-decisions.json
+          path: |
+            _build/interop-decisions.json
+            _build/algorithm-reference.txt
           if-no-files-found: ignore
           retention-days: 14

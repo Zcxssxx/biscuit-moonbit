@@ -33,3 +33,7 @@
 仍需在复审材料中明示的限制是：P-256 与旧 token 外层格式不支持；未知 protobuf 字段严格拒绝；没有 wall-clock timeout；密码依赖未经本项目审计；跨实现验证是固定 Rust 修订上的 curated suite，已有小型 seeded differential，但未覆盖任意输入和全部错误索引。最终通过数与新增跨实现结果以 [conformance.md](conformance.md) 中的运行命令和 Actions 记录为准。
 
 2026-11-19 追加验证：具体接入对象、委托流程和 ACL/JWT 比较见 [maintenance-case.md](maintenance-case.md)。真实业务值重名场景发现第三方符号表隔离缺陷，本轮已修复并增加回归测试；此前的通过记录仅表示当时用例集合通过，不能代替所有规范输入的兼容证明。
+
+## 2026-11-20 评审缺口与最终目标修订
+
+组委会已认可业务价值及 MoonBit 核心贡献，本轮要求最终兼容范围覆盖 P-256 和混合算法。此前把 P-256 列作最终交付排除项的方案已撤回；当前实现仍不支持，但它是必须完成的缺口。详见 [完整兼容计划](full-compatibility-plan.md) 的 G1–G7：密码后端、带算法类型、wire/payload、签发/衰减、proof/seal、第三方 scope、全量样例和双向矩阵。旧表中的“范围外”仅描述现有通过数，最终验收不能继续豁免 test036/test037。
