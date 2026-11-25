@@ -21,7 +21,7 @@ moon bench --target native --release --no-parallelize -p Zcxssxx/biscuit -f auth
 
 ## 多规则与多检查的事实索引
 
-基线为已发布版本的源代码 `630ae9b`。前后使用相同的 Intel Core i7-9700、Windows 10 22H2 和 MoonBit 工具链。每组包含 2 条规则和 1 条允许策略，并加入指定数量的无关谓词事实。计时包含每个请求的事实装载、规则推导、检查及策略求值。令牌验签、样例数据和策略的构造在计时外。
+基线为 Mooncakes `0.1.0` 的源代码 `630ae9b`。优化进入 Mooncakes `0.1.1`。前后使用相同的 Intel Core i7-9700、Windows 10 22H2 和 MoonBit 工具链。每组包含 2 条规则和 1 条允许策略，并加入指定数量的无关谓词事实。计时包含每个请求的事实装载、规则推导、检查及策略求值。令牌验签、样例数据和策略的构造在计时外。
 
 ```powershell
 moon bench --target native --release --no-parallelize -p Zcxssxx/biscuit -f scoped_index_bench_test.mbt

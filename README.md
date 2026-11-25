@@ -11,7 +11,7 @@ Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当
 在已有的 MoonBit 项目中添加依赖。 [Mooncakes 包页面](https://mooncakes.io/docs/Zcxssxx/biscuit)
 
 ```sh
-moon add Zcxssxx/biscuit@0.1.0
+moon add Zcxssxx/biscuit@0.1.1
 ```
 
 在调用方的 `moon.pkg` 中导入库。
@@ -22,7 +22,7 @@ import {
 }
 ```
 
-Mooncakes `0.1.0` 对应 [发布源码提交 `630ae9b`](https://github.com/Zcxssxx/biscuit-moonbit/tree/630ae9b34647f5111569906046a1e4395ac4234f)。后续优化和测试记录随 GitHub 默认分支更新。
+Mooncakes `0.1.1` 包含同一请求内复用的授权事实索引。可以按 [发布源码标签 `v0.1.1`](https://github.com/Zcxssxx/biscuit-moonbit/tree/v0.1.1) 复现该版本，测量方法见 [授权基准](docs/benchmarks.md#多规则与多检查的事实索引)。
 
 ### 从源码运行完整场景
 
