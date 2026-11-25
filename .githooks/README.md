@@ -1,21 +1,9 @@
-# Git Hooks
+# Git 提交前检查
 
-## Pre-commit Hook
+在本仓库启用 Git 钩子后，`git commit` 会运行 `moon check`。命令失败时 Git 会中止本次提交。
 
-This pre-commit hook performs automatic checks before finalizing your commit.
+```sh
+git config --local core.hooksPath .githooks
+```
 
-### Usage Instructions
-
-To use this pre-commit hook:
-
-1. Make the hook executable if it isn't already:
-   ```bash
-   chmod +x .githooks/pre-commit
-   ```
-
-2. Configure Git to use the hooks in the .githooks directory:
-   ```bash
-   git config core.hooksPath .githooks
-   ```
-
-3. The hook will automatically run when you execute `git commit`
+完整验证流程见 [CONTRIBUTING.md](../CONTRIBUTING.md)。

@@ -4,6 +4,38 @@ Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当
 
 项目仍为实验性实现，尚未进行独立密码审计。发布前请阅读“安全边界”；示例中的固定密钥是公开测试数据，不能用于保护真实资源。
 
+## 快速开始
+
+### 安装已发布版
+
+在已有的 MoonBit 项目中添加依赖。 [Mooncakes 包页面](https://mooncakes.io/docs/Zcxssxx/biscuit)
+
+```sh
+moon add Zcxssxx/biscuit@0.1.0
+```
+
+在调用方的 `moon.pkg` 中导入库。
+
+```moonbit
+import {
+  "Zcxssxx/biscuit" @biscuit,
+}
+```
+
+Mooncakes `0.1.0` 对应 [发布源码提交 `630ae9b`](https://github.com/Zcxssxx/biscuit-moonbit/tree/630ae9b34647f5111569906046a1e4395ac4234f)。后续优化和测试记录随 GitHub 默认分支更新。
+
+### 从源码运行完整场景
+
+```sh
+git clone https://github.com/Zcxssxx/biscuit-moonbit.git
+cd biscuit-moonbit
+moon version --all
+moon update
+moon run examples/maintenance
+```
+
+工厂日志示例应输出 `业务验收：10/10 场景符合预期`，覆盖签发、衰减、第三方签署与授权。单项示例包括 [签发与衰减](examples/issue)、[第三方块](examples/third_party) 和 [封存](examples/seal)。
+
 ## 最终兼容目标与当前进度
 
 当前已实现固定规范下的 Ed25519、P-256/secp256r1 及混合算法签名链，覆盖签发、验证、衰减、第三方块、封存与授权。MoonBit 使用 mooncrypt 的 P-256 密码运算，协议、DER/SEC1 适配、签名链与授权求值由本项目实现。
@@ -26,24 +58,6 @@ Biscuit 授权令牌与 Datalog 的 MoonBit 实现，目标配置为 Biscuit 当
 | 文本与传输 | Datalog fact/rule/check/policy/表达式和值解析和打印；Base64URL token 文本 |
 
 Biscuit 外层旧格式 v0/v1/v2 不在当前标准版本范围。未知 protobuf 字段按严格策略拒绝；兼容性边界详见 [docs/compatibility.md](docs/compatibility.md)。
-
-## 快速开始
-
-CI 工具链固定为 MoonBit 0.1.20261023 / moonc 0.10.17+d971670cd，版本见 .moonbit-toolchain。本机工具链可能不同，应以 `moon version --all` 的实际输出为准。可运行：
-
-    moon update
-    moon check
-    moon build
-    moon test
-    moon test -f 'official*'
-    moon run examples/verify
-    moon run examples/authorize
-    moon run examples/third_party
-    moon run examples/seal
-    moon run examples/print_datalog
-    moon run examples/maintenance
-
-examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_rust 通过环境变量读取 Rust 令牌，再由 MoonBit 追加事实与 check。examples/third_party 展示第三方请求、签名、追加和授权。examples/seal 生成封存令牌，examples/print_datalog 输出 Rust 解析器可读取的规则、check 与策略文本。所有固定测试密钥都仅供测试。
 
 ## API 流程
 
@@ -116,12 +130,28 @@ let result = prepared.authorize(
 
 ## 验证与互操作
 
-当前工作树本地最近实测：
+CI 编译器版本固定在 [`.moonbit-toolchain`](.moonbit-toolchain)。本地复现可运行以下命令。
 
-- moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：127 项通过，0 项失败。
-- `moon test -f 'official*'`：52 项通过、0 项失败，覆盖 38 个官方样例 ID 的 50 个授权场景和 2 项签名验证，包含 P-256 的 test036/test037，不再以 unsupported 计数。
-- 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
+```sh
+moon check
+moon build
+moon test
+moon test --target native
+moon test -f "official*"
+```
+
+- 默认后端和 native 各通过 127 项测试。官方样例筛选通过 52 项，包含 38 个样例 ID 中的 50 个授权场景和 2 项独立签名验证。
+- 固定 biscuit-rust 修订的 CI 通过双向互通、8 组签名算法组合与 32 组授权结果差分。格式检查使用 CI 固定工具链。场景明细见 [一致性记录](docs/conformance.md)，运行结果见 [GitHub Actions](https://github.com/Zcxssxx/biscuit-moonbit/actions/workflows/ci.yml)。
+
+## 仓库结构
+
+| 路径 | 内容 |
+| --- | --- |
+| 根包 [`moon.mod`](moon.mod)、[`moon.pkg`](moon.pkg) | 库的入口与依赖。令牌验证和授权在 [`token.mbt`](token.mbt)，Datalog 解析和求值在 [`datalog.mbt`](datalog.mbt)、[`datalog_eval.mbt`](datalog_eval.mbt)。 |
+| 根包 `*_test.mbt`、`*_wbtest.mbt` | 公共 API 测试、内部不变量、官方样例和性能基准。 |
+| [`examples/`](examples) | 按用途组织的独立示例包。 |
+| [`tools/`](tools) | Python 互通脚本及 Rust 对照工具，供本地复现和 CI 使用。 |
+| [`docs/`](docs) | 兼容范围、应用接入、验收证据和开发记录。 |
 
 ## 安全边界
 
@@ -138,4 +168,4 @@ let result = prepared.authorize(
 
 本项目采用 Apache-2.0，见 [LICENSE](LICENSE)。规范基线、官方样例和 Rust 对照实现的修订、直接与传递依赖许可证、测试向量来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。审核基准、支持版本边界及逐项差距见 [docs/compatibility.md](docs/compatibility.md)、[docs/gap-analysis.md](docs/gap-analysis.md) 和 [docs/conformance.md](docs/conformance.md)。
 
-开发与复现流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全边界和问题反馈见 [SECURITY.md](SECURITY.md)。本轮输入加固、查询索引与测试改进记录见 [优化记录](docs/optimization-2026-11-19.md)。
+开发与复现流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题反馈见 [SECURITY.md](SECURITY.md)。项目文档按用途收录在 [文档索引](docs/README.md)。

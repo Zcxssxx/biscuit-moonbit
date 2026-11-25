@@ -6,8 +6,11 @@
 
 | 来源 | 固定版本 | 用途 | 许可证/说明 |
 | --- | --- | --- | --- |
-| [eclipse-biscuit/biscuit](https://github.com/eclipse-biscuit/biscuit) | `b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639` | Biscuit 规范、`schema.proto`、`samples/current` | Apache-2.0；官方样例改编为本仓库的 conformance 测试 |
-| [eclipse-biscuit/biscuit-rust](https://github.com/eclipse-biscuit/biscuit-rust) | fixture 来源 `21e650f31a8521af575f968925acbb56486172f9`；CI 对照 `2273077e2fcabeb8c03474125b4d96d57df6b4f7` | 已发布的令牌测试向量、测试公钥、Rust 互操作 helper | Apache-2.0；固定私钥/令牌仅用于测试，不可保护真实资源 |
+| Biscuit 规范 | `b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639` | `SPECIFICATIONS.md`、`schema.proto` 用于协议实现；`samples/current` 的令牌、授权策略和预期结果改编为根包的 `official_samples*_test.mbt` 及 [互通测试](interop_test.mbt) | [Apache-2.0](https://github.com/eclipse-biscuit/biscuit/blob/b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639/LICENSE) |
+| Biscuit Rust 样例 | `21e650f31a8521af575f968925acbb56486172f9` | 公开测试令牌和公钥，来源标注见 [互通测试](interop_test.mbt) | [biscuit-auth 的 Apache-2.0](https://github.com/eclipse-biscuit/biscuit-rust/blob/21e650f31a8521af575f968925acbb56486172f9/biscuit-auth/LICENSE) |
+| Biscuit Rust 对照 | `2273077e2fcabeb8c03474125b4d96d57df6b4f7` | [CI 对照工具的外部依赖](tools/biscuit-rust-interop/Cargo.toml) | [biscuit-auth 的 Apache-2.0](https://github.com/eclipse-biscuit/biscuit-rust/blob/2273077e2fcabeb8c03474125b4d96d57df6b4f7/biscuit-auth/LICENSE) |
+
+令牌编码、签名链逻辑和 Datalog 求值的 MoonBit 实现位于根包。规范与 Rust 对照用于协议参考和交叉验证。各包的 `pkg.generated.mbti` 由 `moon info` 从本仓库源码生成，保留在版本控制中用于审阅公开接口变更。
 
 ## MoonBit 运行时依赖
 

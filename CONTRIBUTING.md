@@ -16,6 +16,8 @@ moon run examples/maintenance
 
 按 AGENTS.md 在完成时运行 `moon info` 和 `moon fmt`，检查生成接口差异是否符合预期。固定版本工具链下 `moon fmt --check` 必须通过。
 
+可选的 Git 提交前检查在 [`.githooks/`](.githooks)，启用后会在本地提交前执行 `moon check`。
+
 ## 官方样例与差分
 
 ```text

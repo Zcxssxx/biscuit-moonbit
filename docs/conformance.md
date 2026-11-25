@@ -1,13 +1,13 @@
 # 一致性与互操作记录
 
-当前结果见文末 2026-11-20 P-256 实现验收；此前章节为历史运行记录，Ed25519-only 与 unsupported 统计不再代表当前范围。本文只记录实际命令与 CI 结果。
+当前支持范围见 [兼容文档](compatibility.md)。近期验证结果见文末的 P-256 实现验收及 2026-11-25 记录。固定基线后的早期结果保留用于追踪兼容范围的演进。
 
 ## 固定基线
 
 - 规范、`schema.proto` 与 `samples/current`：`eclipse-biscuit/biscuit`，commit `b3d3fe2d744ea8ee964ab0eba96dbc8c9bde1639`。
 - 对照实现：`eclipse-biscuit/biscuit-rust`，commit `2273077e2fcabeb8c03474125b4d96d57df6b4f7`（`biscuit-auth 7.0.0-alpha.3`）。
 - MoonBit：`moon 0.1.20261023`、`moonc v0.10.17+d971670cd`。
-- 兼容范围：当前 protobuf v3、Datalog 3.0–3.3、Ed25519。P-256/secp256r1 按兼容声明排除。
+- 本节早期运行的兼容范围为 protobuf v3、Datalog 3.0–3.3 及 Ed25519。P-256/secp256r1 的后续运行见文末。
 
 ## 官方样例
 

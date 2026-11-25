@@ -1,8 +1,11 @@
-.DS_Store
+# MoonBit 和 Rust 的本地构建与依赖目录
 _build/
-target/
-target
 .mooncakes/
 .moonagent/
+target/
+
+# Python 互操作脚本缓存
 __pycache__/
 *.py[cod]
+
+.DS_Store
