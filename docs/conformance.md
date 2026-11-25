@@ -193,3 +193,5 @@ Bidirectional algorithm matrix: 8/8 passed
 结构化衰减和第三方追加复用同一输入已验证的链。封存与追加按字段位置提取 proof，避免再次解码已验签区块。原有公共 API 继续经过验签和授权检查。
 
 12 项 native release 基准各执行三轮。环境、计量范围、逐轮结果与复现命令见 [benchmarks.md](benchmarks.md)。
+
+扩展函数回调的集合参数隔离覆盖了一元和二元回调、嵌套集合修改、后续授权隔离和嵌套预算错误。本地 `moon test -f 'external callback*'` 为 2/2，全量为 126/126。

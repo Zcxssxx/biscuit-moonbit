@@ -107,3 +107,93 @@ test "prepared token requires the matching root on construction" {
   }
   assert_true(rejected)
 }
+
+///|
+test "external callbacks receive copies of signed collections" {
+  let root = @biscuit.SigningKey::{
+    algorithm: @biscuit.Ed25519,
+    secret: Bytes::make(32, b'\x51'),
+  }
+  let token = @biscuit.issue_with_keys(
+    [@biscuit.parse_fact("grant({\"files\": [\"logs\"]})")],
+    [],
+    [],
+    [],
+    6,
+    root,
+    { algorithm: @biscuit.Ed25519, secret: Bytes::make(32, b'\x52'), },
+  )
+  let prepared = @biscuit.prepare_with_key(
+    token,
+    @biscuit.verification_key(root),
+  )
+  let edit = fn(value : @biscuit.Value) -> @biscuit.Value {
+    match value {
+      @biscuit.MapValue(entries) =>
+        match entries[0].1 {
+          @biscuit.ArrayValue(files) => {
+            files.push(@biscuit.Text("scratch"))
+            @biscuit.Boolean(true)
+          }
+          _ => @biscuit.Boolean(false)
+        }
+      _ => @biscuit.Boolean(false)
+    }
+  }
+  let externals = @biscuit.ExternalFunctions::{
+    unary: Map([("edit", value => edit(value))]),
+    binary: Map([
+      (
+        "edit_pair",
+        (left, right) => {
+          let left_edited = edit(left)
+          let right_edited = edit(right)
+          @biscuit.Boolean(
+            left_edited == @biscuit.Boolean(true) &&
+            right_edited == @biscuit.Boolean(true),
+          )
+        },
+      ),
+    ]),
+  }
+  let exercise = @biscuit.parse_policy(
+    "allow if grant($g), $g.extern::edit(), $g.extern::edit_pair($g), $g == {\"files\": [\"logs\"]}",
+  )
+  let original = @biscuit.parse_policy(
+    "allow if grant({\"files\": [\"logs\"]})",
+  )
+  for policy in [exercise, original] {
+    assert_eq(
+      prepared.authorize([], [], [], [policy], 30, 10, externals).policy_index,
+      0,
+    )
+  }
+}
+
+///|
+test "external callback argument nesting is bounded" {
+  let mut nested : @biscuit.Value = @biscuit.Null
+  for _ in 0..<64 {
+    nested = @biscuit.ArrayValue([nested])
+  }
+  let fact = @biscuit.Fact::{ name: "input", values: [nested], }
+  let externals = @biscuit.ExternalFunctions::{
+    unary: Map([("accept", _ => @biscuit.Boolean(true))]),
+    binary: Map([]),
+  }
+  let limited = try {
+    ignore(
+      @biscuit.evaluate_policy_set_with_externals(
+        [fact],
+        [],
+        [@biscuit.parse_policy("allow if input($x), $x.extern::accept()")],
+        externals,
+      ),
+    )
+    false
+  } catch {
+    @biscuit.Expression(@biscuit.StepLimit) => true
+    _ => false
+  }
+  assert_true(limited)
+}

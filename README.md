@@ -119,7 +119,7 @@ let result = prepared.authorize(
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：124 项通过，0 项失败。
+- moon test：126 项通过，0 项失败。
 - `moon test -f 'official*'`：52 项通过、0 项失败，覆盖 38 个官方样例 ID 的 50 个授权场景和 2 项签名验证，包含 P-256 的 test036/test037，不再以 unsupported 计数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 
@@ -129,6 +129,7 @@ let result = prepared.authorize(
 - issue/attenuate/third-party/seal 相关 API 接收调用方提供的 32 字节种子，不内置随机数生成器。必须从操作系统安全熵源取得彼此独立且新鲜的种子；复用或硬编码种子会破坏安全性。
 - 项目使用的 hustcer/ed25519 0.6.1 依赖未经过本项目密码审计，其维护者标注实现未经审计且不是 constant-time。
 - Authorizer 为派生事实数量、迭代次数提供调用方可配置上限；表达式步骤和查询绑定有固定确定性上限。当前没有 wall-clock 超时参数。
+- 外部 Datalog 回调接收独立的集合副本，以隔离宿主修改。回调参数超过嵌套上限时返回表达式预算错误。
 - token 输入最大 1 MiB、最多 128 个追加块；Datalog 值深度和集合大小也有限制。解析错误目前提供错误类别与消息，不提供源码行列位置。
 - 上游双向测试固定到一个 biscuit-rust revision。另有 seed=20261119 的 32 组小型授权输入差分，覆盖允许/拒绝的匹配策略索引、无匹配策略和失败 check 类别；未覆盖任意表达式组合、全部错误或失败 check 索引。不能据此推断兼容所有 Biscuit 实现或未来版本。
 - P-256 使用 moonbitstack/mooncrypt 0.3.1；未经过本项目独立密码/侧信道审计，不宣称常量时间实现。

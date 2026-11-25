@@ -289,6 +289,37 @@ fn copy_bindings(bindings : Map[String, Value]) -> Map[String, Value] {
 }
 
 ///|
+fn copy_external_argument(
+  value : Value,
+  depth : Int32,
+) -> Value raise AuthorizationError {
+  // Host-provided values can be nested or contain cyclic arrays.
+  if depth >= 64 {
+    raise Expression(StepLimit)
+  }
+  match value {
+    ArrayValue(items) | SetValue(items) => {
+      let copied = []
+      for item in items {
+        copied.push(copy_external_argument(item, depth + 1))
+      }
+      match value {
+        SetValue(_) => SetValue(copied)
+        _ => ArrayValue(copied)
+      }
+    }
+    MapValue(entries) => {
+      let copied = []
+      for (key, item) in entries {
+        copied.push((key, copy_external_argument(item, depth + 1)))
+      }
+      MapValue(copied)
+    }
+    _ => value
+  }
+}
+
+///|
 fn evaluate_unary(
   operator : UnaryOperator,
   value : Value,
@@ -314,7 +345,7 @@ fn evaluate_unary(
     TypeOf => Text(value_type_name(value))
     ExternalUnary(name) =>
       match externals.unary.get(name) {
-        Some(callback) => callback(value)
+        Some(callback) => callback(copy_external_argument(value, 0))
         None => raise Expression(MissingExternal(name))
       }
   }
@@ -369,7 +400,11 @@ fn evaluate_binary(
     Get => get_value(left, right)
     ExternalBinary(name) =>
       match externals.binary.get(name) {
-        Some(callback) => callback(left, right)
+        Some(callback) =>
+          callback(
+            copy_external_argument(left, 0),
+            copy_external_argument(right, 0),
+          )
         None => raise Expression(MissingExternal(name))
       }
     LazyAnd | LazyOr | Any | All | TryOr => raise Expression(MalformedProgram)
