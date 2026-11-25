@@ -119,7 +119,7 @@ let result = prepared.authorize(
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：126 项通过，0 项失败。
+- moon test：127 项通过，0 项失败。
 - `moon test -f 'official*'`：52 项通过、0 项失败，覆盖 38 个官方样例 ID 的 50 个授权场景和 2 项签名验证，包含 P-256 的 test036/test037，不再以 unsupported 计数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 

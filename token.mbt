@@ -1586,7 +1586,7 @@ fn resolve_visible_origins(
 ///|
 fn scoped_check_matches(
   check : Check,
-  facts : Array[FactOrigin],
+  facts : ScopedFacts,
   current_origin : Int32,
   block_scopes : Array[TrustScope],
   authorizer_origin : Int32,

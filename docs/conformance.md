@@ -195,3 +195,7 @@ Bidirectional algorithm matrix: 8/8 passed
 12 项 native release 基准各执行三轮。环境、计量范围、逐轮结果与复现命令见 [benchmarks.md](benchmarks.md)。
 
 扩展函数回调的集合参数隔离覆盖了一元和二元回调、嵌套集合修改、后续授权隔离和嵌套预算错误。本地 `moon test -f 'external callback*'` 为 2/2，全量为 126/126。
+
+## 2026-11-25 多规则授权事实索引
+
+本机执行 `moon check`、`moon build`、`moon test`、`moon test -f 'official*'` 和 `moon run examples/maintenance`。全量 127/127，官方筛选 52/52，工厂日志示例 10/10。新增回归检验同值不同来源的派生事实、同轮后续规则的可见性、事实数量上限与迭代上限。对照基准见 [授权基准](benchmarks.md#多规则与多检查的事实索引)。

@@ -701,6 +701,30 @@ priv struct FactOrigin {
 } derive(Eq)
 
 ///|
+priv struct ScopedFacts {
+  by_name : Map[String, Array[FactOrigin]]
+  mut count : Int32
+}
+
+///|
+fn ScopedFacts::add(self : ScopedFacts, fact : FactOrigin) -> Unit {
+  match self.by_name.get(fact.fact.name) {
+    Some(candidates) => candidates.push(fact)
+    None => self.by_name.set(fact.fact.name, [fact])
+  }
+  self.count += 1
+}
+
+///|
+fn ScopedFacts::from_facts(initial : Array[FactOrigin]) -> ScopedFacts {
+  let facts = ScopedFacts::{ by_name: Map([]), count: 0, }
+  for fact in initial {
+    facts.add(fact)
+  }
+  facts
+}
+
+///|
 priv struct OriginBindings {
   values : Map[String, Value]
   origins : Array[Int32]
@@ -725,42 +749,38 @@ fn union_origins(left : Array[Int32], right : Array[Int32]) -> Array[Int32] {
 }
 
 ///|
-fn scoped_rule_bindings(
-  rule : Rule,
-  facts : Array[FactOrigin],
+fn scoped_bindings(
+  body : Array[Predicate],
+  facts : ScopedFacts,
   visible_origins : Array[Int32],
   max_bindings : Int32,
 ) -> Array[OriginBindings] raise AuthorizationError {
-  // Index by predicate name once, while retaining every origin variant.
-  let by_name : Map[String, Array[FactOrigin]] = Map([])
-  for fact in facts {
-    if fact.origins.all(origin => visible_origins.contains(origin)) {
-      match by_name.get(fact.fact.name) {
-        Some(candidates) => candidates.push(fact)
-        None => by_name.set(fact.fact.name, [fact])
-      }
-    }
-  }
   let mut environments : Array[OriginBindings] = [
     { values: Map([]), origins: [], },
   ]
-  for predicate in rule.body {
+  for predicate in body {
+    let candidates = match facts.by_name.get(predicate.name) {
+      Some(bucket) =>
+        bucket.filter(fact => {
+          predicate.terms.length() == fact.fact.values.length() &&
+          fact.origins.all(origin => visible_origins.contains(origin))
+        })
+      None => return []
+    }
     let next_environments : Array[OriginBindings] = []
     for environment in environments {
-      for fact in by_name.get(predicate.name).unwrap_or([]) {
-        if predicate.terms.length() == fact.fact.values.length() {
-          match unify(predicate, fact.fact, environment.values) {
-            Some(values) => {
-              if next_environments.length() >= max_bindings {
-                raise FactLimit
-              }
-              next_environments.push({
-                values,
-                origins: union_origins(environment.origins, fact.origins),
-              })
+      for fact in candidates {
+        match unify(predicate, fact.fact, environment.values) {
+          Some(values) => {
+            if next_environments.length() >= max_bindings {
+              raise FactLimit
             }
-            None => ()
+            next_environments.push({
+              values,
+              origins: union_origins(environment.origins, fact.origins),
+            })
           }
+          None => ()
         }
       }
     }
@@ -779,19 +799,19 @@ fn derive_scoped_facts(
   max_facts : Int32,
   max_iterations : Int32,
   externals : ExternalFunctions,
-) -> Array[FactOrigin] raise AuthorizationError {
+) -> ScopedFacts raise AuthorizationError {
   if initial.length() > max_facts {
     raise FactLimit
   }
-  let facts = initial.copy()
+  let facts = ScopedFacts::from_facts(initial)
   let mut iteration : Int32 = 0
   let mut stable = false
   while iteration < max_iterations && !stable {
     stable = true
     for scoped in rules {
       for
-        environment in scoped_rule_bindings(
-          scoped.rule,
+        environment in scoped_bindings(
+          scoped.rule.body,
           facts,
           scoped.visible_origins,
           max_facts,
@@ -807,11 +827,15 @@ fn derive_scoped_facts(
             Some(fact) => {
               let origins = union_origins(environment.origins, [scoped.origin])
               let derived = FactOrigin::{ fact, origins, }
-              if !facts.contains(derived) {
-                if facts.length() >= max_facts {
+              let already_known = match facts.by_name.get(fact.name) {
+                Some(bucket) => bucket.contains(derived)
+                None => false
+              }
+              if !already_known {
+                if facts.count >= max_facts {
                   raise FactLimit
                 }
-                facts.push(derived)
+                facts.add(derived)
                 stable = false
               }
             }
@@ -831,17 +855,11 @@ fn derive_scoped_facts(
 ///|
 fn scoped_query_matches(
   query : Query,
-  facts : Array[FactOrigin],
+  facts : ScopedFacts,
   visible_origins : Array[Int32],
   externals : ExternalFunctions,
 ) -> Bool raise AuthorizationError {
-  let rule = Rule::{
-    head: Predicate::{ name: "__query_result", terms: [], },
-    body: query.body,
-    conditions: query.conditions,
-    scopes: [],
-  }
-  for environment in scoped_rule_bindings(rule, facts, visible_origins, 10000) {
+  for environment in scoped_bindings(query.body, facts, visible_origins, 10000) {
     if query.conditions.all(condition => {
         condition_matches_with_externals(
           condition,
@@ -858,17 +876,11 @@ fn scoped_query_matches(
 ///|
 fn scoped_query_all_matches(
   query : Query,
-  facts : Array[FactOrigin],
+  facts : ScopedFacts,
   visible_origins : Array[Int32],
   externals : ExternalFunctions,
 ) -> Bool raise AuthorizationError {
-  let rule = Rule::{
-    head: Predicate::{ name: "__query_result", terms: [], },
-    body: query.body,
-    conditions: query.conditions,
-    scopes: [],
-  }
-  let bindings = scoped_rule_bindings(rule, facts, visible_origins, 10000)
+  let bindings = scoped_bindings(query.body, facts, visible_origins, 10000)
   if bindings.length() == 0 {
     return false
   }
