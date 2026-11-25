@@ -19,7 +19,7 @@ repository = "https://github.com/Zcxssxx/biscuit-moonbit"
 
 license = "Apache-2.0"
 
-keywords = [ "biscuit", "authorization", "datalog", "ed25519" ]
+keywords = [ "biscuit", "authorization", "datalog", "ed25519", "p256" ]
 
 preferred_target = "wasm"
 

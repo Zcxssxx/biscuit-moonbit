@@ -2,8 +2,7 @@
 
 ///|
 fn expect_request(
-  token : Bytes,
-  root : Bytes,
+  token : @biscuit.PreparedToken,
   label : String,
   site : String,
   job : String,
@@ -24,8 +23,11 @@ fn expect_request(
     "allow if site($s), operation($op), right($s, $op) trusting authority",
   )
   let allowed = try {
-    @biscuit.authorize_token(token, root, facts, [], [policy], 1000, 100)
-    true
+    let decision = token.authorize(facts, [], [], [policy], 1000, 100, @biscuit.ExternalFunctions::{
+      unary: Map([]),
+      binary: Map([]),
+    })
+    decision.decision is @biscuit.Allow
   } catch {
     @biscuit.FailedCheck(_) | @biscuit.NoMatchingPolicy | @biscuit.Denied(_) =>
       false
@@ -88,34 +90,41 @@ fn main {
       @biscuit.serialize_third_party_block(contents),
       Bytes::make(32, b'\x65'),
     )
+    let ready_for_requests = @biscuit.prepare_token(ready, root)
     let path = "/plant-a/pump-7/logs/error.log"
     let now = "2026-11-20T10:00:00Z"
     expect_request(
-      delegated, root, "未取得工厂审批", "plant-a", "WO-2026-041", path, "read",
-      now, false,
+      @biscuit.prepare_token(delegated, root),
+      "未取得工厂审批",
+      "plant-a",
+      "WO-2026-041",
+      path,
+      "read",
+      now,
+      false,
     )
     expect_request(
-      ready, root, "审批后读取指定设备日志", "plant-a", "WO-2026-041",
+      ready_for_requests, "审批后读取指定设备日志", "plant-a", "WO-2026-041",
       path, "read", now, true,
     )
     expect_request(
-      ready, root, "尝试写入日志", "plant-a", "WO-2026-041", path, "write",
+      ready_for_requests, "尝试写入日志", "plant-a", "WO-2026-041", path, "write",
       now, false,
     )
     expect_request(
-      ready, root, "尝试读取其他设备", "plant-a", "WO-2026-041", "/plant-a/pump-8/logs/error.log",
+      ready_for_requests, "尝试读取其他设备", "plant-a", "WO-2026-041", "/plant-a/pump-8/logs/error.log",
       "read", now, false,
     )
     expect_request(
-      ready, root, "尝试跨工厂读取", "plant-b", "WO-2026-041", path, "read",
-      now, false,
+      ready_for_requests, "尝试跨工厂读取", "plant-b", "WO-2026-041", path,
+      "read", now, false,
     )
     expect_request(
-      ready, root, "尝试换用其他工单", "plant-a", "WO-2026-042", path, "read",
-      now, false,
+      ready_for_requests, "尝试换用其他工单", "plant-a", "WO-2026-042", path,
+      "read", now, false,
     )
     expect_request(
-      ready, root, "到期边界拒绝", "plant-a", "WO-2026-041", path, "read",
+      ready_for_requests, "到期边界拒绝", "plant-a", "WO-2026-041", path, "read",
       "2026-11-20T12:00:00Z", false,
     )
     // A holder's own fact must not impersonate the trusted approval signer.
@@ -130,8 +139,14 @@ fn main {
       Bytes::make(32, b'\x66'),
     )
     expect_request(
-      forged, root, "持有者自填审批事实", "plant-a", "WO-2026-041", path,
-      "read", now, false,
+      @biscuit.prepare_token(forged, root),
+      "持有者自填审批事实",
+      "plant-a",
+      "WO-2026-041",
+      path,
+      "read",
+      now,
+      false,
     )
     let impostor = @biscuit.build_third_party_block(
       request,
@@ -145,8 +160,14 @@ fn main {
       Bytes::make(32, b'\x68'),
     )
     expect_request(
-      wrong_signer, root, "非受信方签署审批", "plant-a", "WO-2026-041", path,
-      "read", now, false,
+      @biscuit.prepare_token(wrong_signer, root),
+      "非受信方签署审批",
+      "plant-a",
+      "WO-2026-041",
+      path,
+      "read",
+      now,
+      false,
     )
     // Later rights facts cannot override authority trust or earlier checks.
     let escalated = @biscuit.attenuate_block(
@@ -160,8 +181,14 @@ fn main {
       Bytes::make(32, b'\x69'),
     )
     expect_request(
-      escalated, root, "追加写权限事实尝试越权", "plant-a", "WO-2026-041",
-      path, "write", now, false,
+      @biscuit.prepare_token(escalated, root),
+      "追加写权限事实尝试越权",
+      "plant-a",
+      "WO-2026-041",
+      path,
+      "write",
+      now,
+      false,
     )
     println("业务验收：10/10 场景符合预期")
   } catch {

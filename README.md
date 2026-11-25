@@ -100,12 +100,26 @@ examples/issue 会签发并衰减一个公开测试令牌；examples/attenuate_r
 
 运行全部算法的可复现双向验收：`python tools/algorithm_interop.py`（需要 Cargo 和 native 编译环境）。详细用法见 [算法接入说明](docs/algorithm-api.md)。
 
+## 同一令牌的重复授权
+
+使用 `prepare_with_key(token, trusted_root)` 验签并解码一次。结果为不可从库外构造的 `PreparedToken`。对每个请求调用 `prepared.authorize(facts, rules, checks, policies, max_facts, max_iterations, externals)`，提供该次请求的可信事实与当前策略。
+
+```moonbit
+let prepared = @biscuit.prepare_with_key(token, trusted_root)
+let result = prepared.authorize(
+  request_facts, [], [], policies, 1000, 100,
+  @biscuit.ExternalFunctions::{ unary: Map([]), binary: Map([]), },
+)
+```
+
+服务端按可信根和令牌内容划分缓存，在信任配置改变时使缓存失效。调用方继续在每次请求提供当前时钟、权限条件和撤销决策。工厂日志示例使用同一已验签令牌处理多次独立请求。可复现实测与三轮数据见 [授权基准](docs/benchmarks.md)。
+
 ## 验证与互操作
 
 当前工作树本地最近实测：
 
 - moon check、moon build、moon fmt --check 退出码为 0。
-- moon test：121 项通过，0 项失败。
+- moon test：124 项通过，0 项失败。
 - `moon test -f 'official*'`：52 项通过、0 项失败，覆盖 38 个官方样例 ID 的 50 个授权场景和 2 项签名验证，包含 P-256 的 test036/test037，不再以 unsupported 计数。
 - 固定 biscuit-rust 修订上的 CI 双向互通已通过：12 组授权结果一致，MoonBit 打印的 Datalog 文本由 Rust 解析器接受。运行编号、提交 SHA 与场景明细见 [docs/conformance.md](docs/conformance.md)。
 

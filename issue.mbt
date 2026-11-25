@@ -67,34 +67,14 @@ pub fn issue_raw_with_keys(
 ///|
 /// Seal an unsealed token so its holder can no longer append attenuation
 /// blocks. The token's proof secret is replaced by a signature over the final
-/// block, matching the Biscuit v3 Ed25519 proof format.
+/// block, using the algorithm of the final proof key.
 pub fn seal_token(token : Bytes, root_key : Bytes) -> Bytes raise TokenError {
   let blocks = verify_signed_chain(token, root_key)
   if blocks.length() == 0 {
     raise Malformed("token contains no blocks")
   }
 
-  let reader = Reader::{ data: token, pos: 0, }
-  let mut prefix = b""
-  let mut encoded_proof : Bytes? = None
-  while reader.pos < token.length() {
-    let start = reader.pos
-    let tag = reader.varint()
-    match tag {
-      8 => ignore(reader.varint())
-      18 | 26 => ignore(reader.bytes())
-      34 if encoded_proof is None => encoded_proof = Some(reader.bytes())
-      _ => raise Malformed("invalid token proof layout")
-    }
-    if tag != 34 {
-      prefix = prefix + token[start:reader.pos].to_owned()
-    }
-  }
-
-  let proof = match encoded_proof {
-    Some(value) => value
-    None => raise Malformed("missing proof")
-  }
+  let (prefix, proof) = split_verified_proof(token)
   let proof_reader = Reader::{ data: proof, pos: 0, }
   if proof_reader.varint() != 10 {
     raise Unsupported("token is already sealed")
@@ -121,6 +101,30 @@ pub fn seal_token(token : Bytes, root_key : Bytes) -> Bytes raise TokenError {
     raise Malformed("token exceeds 1 MiB")
   }
   result
+}
+
+///|
+fn split_verified_proof(token : Bytes) -> (Bytes, Bytes) raise TokenError {
+  let reader = Reader::{ data: token, pos: 0, }
+  while reader.pos < token.length() {
+    let start = reader.pos
+    match reader.varint() {
+      8 => ignore(reader.varint())
+      18 | 26 => {
+        let length = reader.varint()
+        if length > token.length() - reader.pos {
+          raise Malformed("truncated signed block")
+        }
+        reader.pos += length
+      }
+      34 => {
+        let proof = reader.bytes()
+        return (token[:start].to_owned() + token[reader.pos:].to_owned(), proof)
+      }
+      _ => raise Malformed("invalid token field")
+    }
+  }
+  raise Malformed("missing proof")
 }
 
 ///|
@@ -151,7 +155,22 @@ fn append_raw_with_external(
   next : SigningKey,
   external_signature : ExternalSignature?,
 ) -> Bytes raise TokenError {
-  verify_signatures(token, root_key)
+  let blocks = verify_signed_chain(token, root_key)
+  append_verified_blocks(token, blocks, block_data, next, external_signature)
+}
+
+///|
+fn append_verified_blocks(
+  token : Bytes,
+  blocks : Array[SignedBlock],
+  block_data : Bytes,
+  next : SigningKey,
+  external_signature : ExternalSignature?,
+) -> Bytes raise TokenError {
+  if blocks.length() > 128 {
+    raise Malformed("too many blocks")
+  }
+  let last = blocks[blocks.length() - 1]
   let next_seed = next.secret
   if next_seed.length() != 32 {
     raise Malformed("seed must be 32 bytes")
@@ -159,44 +178,7 @@ fn append_raw_with_external(
   if block_data.length() > 1048000 {
     raise Malformed("block too large")
   }
-  let reader = Reader::{ data: token, pos: 0, }
-  let mut prefix = b""
-  let mut authority : SignedBlock? = None
-  let mut last_block : SignedBlock? = None
-  let mut proof : Bytes? = None
-  let mut block_count = 0
-  while reader.pos < token.length() {
-    let start = reader.pos
-    let tag = reader.varint()
-    match tag {
-      8 => ignore(reader.varint())
-      18 => authority = Some(parse_block(reader.bytes()))
-      26 => {
-        last_block = Some(parse_block(reader.bytes()))
-        block_count += 1
-      }
-      34 => proof = Some(reader.bytes())
-      _ => raise Malformed("invalid token field")
-    }
-    if tag != 34 {
-      prefix = prefix + token[start:reader.pos].to_owned()
-    }
-  }
-  if block_count >= 128 {
-    raise Malformed("too many blocks")
-  }
-  let last = match last_block {
-    Some(block) => block
-    None =>
-      match authority {
-        Some(block) => block
-        None => raise Malformed("missing authority")
-      }
-  }
-  let proof_bytes = match proof {
-    Some(value) => value
-    None => raise Malformed("missing proof")
-  }
+  let (prefix, proof_bytes) = split_verified_proof(token)
   let pr = Reader::{ data: proof_bytes, pos: 0, }
   if pr.varint() != 10 {
     raise Unsupported("sealed token")
@@ -415,7 +397,7 @@ fn append_third_party_typed(
   if datalog.version < 5 {
     raise Unsupported("third-party blocks require Datalog version 3.2")
   }
-  append_raw_with_external(token, root_key, block_data, next, Some(canonical))
+  append_verified_blocks(token, blocks, block_data, next, Some(canonical))
 }
 
 ///|

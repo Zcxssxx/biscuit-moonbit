@@ -44,27 +44,14 @@ pub fn attenuate_with_key(
   version : Int32,
   next : SigningKey,
 ) -> Bytes raise TokenError {
-  let signed = verify_signed_chain(token, pack_key(root))
-  let existing : Array[String] = []
-  for block in signed {
-    if block.external_signature is None {
-      for symbol in parse_encoded_fact_block(block.data).symbols {
-        let value = @utf8.decode(symbol) catch {
-          _ => raise Malformed("invalid UTF-8 symbol")
-        }
-        if existing.contains(value) {
-          raise Malformed("duplicate symbol")
-        }
-        existing.push(value)
-      }
-    }
-  }
-  append_with_key(
+  attenuate_structured(
     token,
-    root,
-    encode_block_with_symbols_and_scopes(
-      facts, rules, checks, version, existing, scopes,
-    ),
+    pack_key(root),
+    facts,
+    rules,
+    checks,
+    scopes,
+    version,
     next,
   )
 }
@@ -132,10 +119,19 @@ pub fn authorize_with_key(
   max_iterations : Int32,
   externals : ExternalFunctions,
 ) -> AuthorizationResult raise AuthorizationError {
+  prepare_with_key(token, root).authorize(
+    facts, rules, checks, policies, max_facts, max_iterations, externals,
+  )
+}
+
+///|
+/// Authenticate and decode a token using an explicitly typed trusted root.
+pub fn prepare_with_key(
+  token : Bytes,
+  root : VerificationKey,
+) -> PreparedToken raise AuthorizationError {
   let key = pack_key(root) catch {
     _ => raise InvalidToken("invalid trusted root key")
   }
-  authorize_token_detailed(
-    token, key, facts, rules, checks, policies, max_facts, max_iterations, externals,
-  )
+  prepare_token(token, key)
 }

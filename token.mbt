@@ -1384,6 +1384,25 @@ pub fn authorize_token_detailed(
   max_iterations : Int32,
   externals : ExternalFunctions,
 ) -> AuthorizationResult raise AuthorizationError {
+  prepare_token(token, root_key).authorize(
+    ambient_facts, ambient_rules, ambient_checks, policies, max_facts, max_iterations,
+    externals,
+  )
+}
+
+///|
+/// An immutable snapshot of an authenticated token. Each authorization evaluates
+/// fresh request facts, checks and policies. Keep it within the same trust context.
+struct PreparedToken {
+  programs : Array[VerifiedBlockProgram]
+}
+
+///|
+/// Authenticate and decode a token once for repeated authorization.
+pub fn prepare_token(
+  token : Bytes,
+  root_key : Bytes,
+) -> PreparedToken raise AuthorizationError {
   let programs = verify_block_programs(token, root_key) catch {
     Malformed(message) => raise InvalidToken(message)
     Unsupported(message) => raise UnsupportedTokenFeature(message)
@@ -1398,6 +1417,22 @@ pub fn authorize_token_detailed(
     }
   }
 
+  { programs, }
+}
+
+///|
+/// Evaluate this token against one independent request.
+pub fn PreparedToken::authorize(
+  self : PreparedToken,
+  ambient_facts : Array[Fact],
+  ambient_rules : Array[Rule],
+  ambient_checks : Array[Check],
+  policies : Array[Policy],
+  max_facts : Int32,
+  max_iterations : Int32,
+  externals : ExternalFunctions,
+) -> AuthorizationResult raise AuthorizationError {
+  let programs = self.programs
   let authorizer_origin = programs.length()
   let facts : Array[FactOrigin] = []
   for program in programs {

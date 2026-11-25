@@ -718,29 +718,7 @@ pub fn attenuate(
   if checks.length() == 0 {
     raise Malformed("attenuation requires at least one check")
   }
-  let signed = verify_signed_chain(token, root_key)
-  let existing_symbols : Array[String] = []
-  for block in signed {
-    if block.external_signature is Some(_) {
-      continue
-    }
-    let encoded = parse_encoded_fact_block(block.data)
-    for symbol in encoded.symbols {
-      let value = @utf8.decode(symbol) catch {
-        _ => raise Malformed("invalid UTF-8 symbol")
-      }
-      if existing_symbols.contains(value) {
-        raise Malformed("duplicate symbol in existing token")
-      }
-      existing_symbols.push(value)
-    }
-  }
-  append_raw(
-    token,
-    root_key,
-    encode_block_with_symbols([], [], checks, version, existing_symbols),
-    next_seed,
-  )
+  attenuate_block(token, root_key, [], [], checks, [], version, next_seed)
 }
 
 ///|
@@ -755,6 +733,29 @@ pub fn attenuate_block(
   block_scopes : Array[TrustScope],
   version : Int32,
   next_seed : Bytes,
+) -> Bytes raise TokenError {
+  attenuate_structured(
+    token,
+    root_key,
+    facts,
+    rules,
+    checks,
+    block_scopes,
+    version,
+    { algorithm: Ed25519, secret: next_seed, },
+  )
+}
+
+///|
+fn attenuate_structured(
+  token : Bytes,
+  root_key : Bytes,
+  facts : Array[Fact],
+  rules : Array[Rule],
+  checks : Array[Check],
+  block_scopes : Array[TrustScope],
+  version : Int32,
+  next : SigningKey,
 ) -> Bytes raise TokenError {
   let signed = verify_signed_chain(token, root_key)
   let existing_symbols : Array[String] = []
@@ -776,5 +777,5 @@ pub fn attenuate_block(
   let block_data = encode_block_with_symbols_and_scopes(
     facts, rules, checks, version, existing_symbols, block_scopes,
   )
-  append_raw(token, root_key, block_data, next_seed)
+  append_verified_blocks(token, signed, block_data, next, None)
 }

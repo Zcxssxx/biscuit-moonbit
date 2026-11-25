@@ -90,6 +90,10 @@ pub fn parse_third_party_block(Bytes) -> ThirdPartyBlockContents raise TokenErro
 
 pub fn parse_trust_scopes(String) -> Array[TrustScope] raise TokenError
 
+pub fn prepare_token(Bytes, Bytes) -> PreparedToken raise AuthorizationError
+
+pub fn prepare_with_key(Bytes, VerificationKey) -> PreparedToken raise AuthorizationError
+
 pub fn print_check(Check) -> String raise TokenError
 
 pub fn print_expression(Condition) -> String raise TokenError
@@ -302,6 +306,9 @@ pub(all) struct Predicate {
 } derive(Eq)
 pub fn Predicate::equal(Self, Self) -> Bool
 pub fn Predicate::not_equal(Self, Self) -> Bool
+
+type PreparedToken
+pub fn PreparedToken::authorize(Self, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> AuthorizationResult raise AuthorizationError
 
 pub(all) struct Query {
   body : Array[Predicate]

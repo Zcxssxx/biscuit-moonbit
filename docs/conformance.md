@@ -185,3 +185,11 @@ Bidirectional algorithm matrix: 8/8 passed
 后续提交 `9d79030` 的 [CI run 44708900216](https://github.com/Zcxssxx/biscuit-moonbit/actions/runs/44708900216) 再次全流程通过，实测 120 项测试，包含跨令牌签名绑定负向测试、第三方 contents 编解码以及 8/8 双向算法矩阵。
 
 最后补充跨算法 secret 复用拒绝：即使 root/next 或 current/next 采用不同算法，相同 secret 字节也不可作为新 proof 复用，以避免转交 proof 时暴露上游签名 secret。新增回归测试本地通过；完整本地总数为 121/121，官方筛选维持 52/52。签发 API 只检查可直接比较的 secret；宿主仍必须为每次签发/追加提供独立新鲜密钥。
+
+## 2026-11-25 授权复用与衰减优化
+
+本机执行 `moon check`、`moon test`、`moon test -f 'official*'`、`moon build` 和 `moon run examples/maintenance`。全量 124/124，官方筛选 52/52，业务示例 10/10。新增测试覆盖同一已验签令牌处理多次互相独立的读写请求、到期、资源预算、错误根密钥，以及 proof 字段先于区块时的衰减和封存。
+
+结构化衰减和第三方追加复用同一输入已验证的链。封存与追加按字段位置提取 proof，避免再次解码已验签区块。原有公共 API 继续经过验签和授权检查。
+
+12 项 native release 基准各执行三轮。环境、计量范围、逐轮结果与复现命令见 [benchmarks.md](benchmarks.md)。
