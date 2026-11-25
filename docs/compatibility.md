@@ -28,7 +28,7 @@
 
 FFI handler、可信根选择、真实 ambient facts、安全随机数、密钥管理、身份绑定与即时撤销由宿主实现。Ed25519 seed 和 P-256 scalar 均须独立、安全生成；P-256 scalar 要在有效范围内，不能把任意口令直接作为密钥。
 
-两套密码后端均未由本项目接受独立密码/侧信道审计。Rust helper 尚无 Cargo.lock；CI 对照固定 Biscuit revision，但间接 Rust 依赖没有完整锁定。
+两套密码后端均未由本项目接受独立密码或侧信道审计。Rust 对照固定 Biscuit revision、Rust 1.100.0 和 [Cargo.lock](../tools/biscuit-rust-interop/Cargo.lock)。这些 Rust 依赖仅用于对照测试。
 
 ## 测试状态
 

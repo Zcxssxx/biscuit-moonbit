@@ -11,6 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      RUSTUP_TOOLCHAIN: "1.100.0"
     steps:
       - uses: actions/checkout@v4
       - name: Install MoonBit
@@ -42,17 +44,16 @@ jobs:
           python-version: '3.11'
       - name: Set up Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt
           rustc --version
           cargo --version
       - name: Check and build pinned biscuit-rust helper
         run: |
           cargo fmt --manifest-path tools/biscuit-rust-interop/Cargo.toml -- --check
-          cargo test --manifest-path tools/biscuit-rust-interop/Cargo.toml
+          cargo test --locked --manifest-path tools/biscuit-rust-interop/Cargo.toml
       - run: python tools/interop.py
       - name: Validate Rust-only P-256 and mixed-algorithm reference matrix
-        run: cargo run --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix > _build/algorithm-reference.txt
+        run: cargo run --locked --quiet --manifest-path tools/biscuit-rust-interop/Cargo.toml -- algorithm-matrix > _build/algorithm-reference.txt
       - name: Validate bidirectional P-256 and mixed-algorithm interoperability
         run: python tools/algorithm_interop.py
       - name: Preserve differential fixtures

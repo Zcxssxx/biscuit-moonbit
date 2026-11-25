@@ -36,7 +36,7 @@
 | [base64](https://github.com/marshallpierce/rust-base64) | 0.22.1 | MIT OR Apache-2.0 | URL-safe 第三方 block contents 编码 |
 | [hex](https://github.com/KokaKiwi/rust-hex) | 0.4.3 | MIT OR Apache-2.0 | 测试密钥十六进制转换 |
 
-`Cargo.toml` 固定了 helper 的直接 crate 版本和 Biscuit Git revision，但仓库不含 `Cargo.lock`；Rust 间接依赖的最终解析版本可能随时间变化。CI 每次解析时运行 `cargo test`，这不等价于完整锁定传递依赖。
+`Cargo.toml` 固定 helper 的直接 crate 版本和 Biscuit Git revision。[Cargo.lock](tools/biscuit-rust-interop/Cargo.lock) 记录传递依赖和注册表校验和。CI 使用 Rust 1.100.0，构建与互通运行均启用 `--locked`。
 
 ## 安全与再分发边界
 

@@ -25,11 +25,11 @@ moon run examples/maintenance
 ```text
 moon test -f 'official*'
 cargo fmt --manifest-path tools/biscuit-rust-interop/Cargo.toml -- --check
-cargo test --manifest-path tools/biscuit-rust-interop/Cargo.toml
+cargo test --locked --manifest-path tools/biscuit-rust-interop/Cargo.toml
 python tools/interop.py
 ```
 
-互通脚本需要本机 Cargo 和 MoonBit native 编译环境；也可使用 GitHub Actions。脚本固定 upstream Rust revision，保留双向令牌、衰减、第三方、封存检查，并生成 32 组 seed=20261119 的小型授权输入，比较决策和匹配策略索引。失败 check 暂按类别比较，没有映射全部检查索引。
+互通脚本需要本机 Cargo 和 MoonBit native 编译环境，也可使用 GitHub Actions。CI 固定 Rust 1.100.0。脚本和 CI 使用 `--locked`，按 [Cargo.lock](tools/biscuit-rust-interop/Cargo.lock) 解析依赖。测试覆盖双向令牌、衰减、第三方块和封存，并生成 32 组 seed=20261119 的小型授权输入，比较决策和匹配策略索引。失败 check 暂按类别比较，没有映射全部检查索引。
 
 `_build/interop-decisions.json` 记录随机种子、输入事实、策略、期望和两侧结果；CI 保存为 `interop-decisions` artifact 14 天。发生差异时先保存该 fixture，再缩减复现并修复；不得把异常统一记为权限拒绝来让对照通过。上游解析错误或意外求值错误应使差分进程失败。
 

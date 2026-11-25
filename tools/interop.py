@@ -44,6 +44,7 @@ def rust(mode: str, values: dict[str, str] | None = None) -> str:
             "cargo",
             "run",
             "--quiet",
+            "--locked",
             "--manifest-path",
             str(RUST_MANIFEST),
             "--",
