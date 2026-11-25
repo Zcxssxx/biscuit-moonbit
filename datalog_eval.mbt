@@ -695,10 +695,11 @@ fn get_value(left : Value, right : Value) -> Value raise AuthorizationError {
 }
 
 ///|
+#derive(Eq)
 priv struct FactOrigin {
   fact : Fact
   origins : Array[Int32]
-} derive(Eq)
+}
 
 ///|
 priv struct ScopedFacts {

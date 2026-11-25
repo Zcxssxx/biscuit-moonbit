@@ -20,9 +20,16 @@ jobs:
       - run: moon version --all
       - run: moon update
       - run: moon fmt --check
-      - run: moon check
+      - run: moon check --deny-warn
       - run: moon build
-      - run: moon test
+      - run: moon test --deny-warn
+      - run: moon test --target native --deny-warn
+      - name: Validate official Biscuit samples
+        run: moon test --deny-warn -f 'official*'
+      - name: Verify generated MoonBit interfaces
+        run: |
+          moon info
+          git diff --exit-code -- '*.mbti'
       - run: moon run examples/verify
       - name: Validate authorization and inspection examples
         run: |

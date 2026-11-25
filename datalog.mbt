@@ -1,8 +1,9 @@
 ///|
+#derive(Eq, @debug.Debug)
 pub(all) enum MapKey {
   IntegerKey(Int64)
   StringKey(String)
-} derive(Eq, @debug.Debug)
+}
 
 ///|
 pub extend MapKey with Eq::{equal, not_equal}
@@ -12,6 +13,7 @@ pub extend MapKey with @debug.Debug::{to_repr}
 
 ///|
 /// Constants supported by the Datalog parser and evaluator subset.
+#derive(@debug.Debug)
 pub(all) enum Value {
   Text(String)
   Number(Int64)
@@ -22,7 +24,7 @@ pub(all) enum Value {
   MapValue(Array[(MapKey, Value)])
   Boolean(Bool)
   Null
-} derive(@debug.Debug)
+}
 
 ///|
 pub impl Eq for Value with fn equal(self, other) -> Bool {
@@ -53,10 +55,11 @@ pub extend Value with @debug.Debug::{to_repr}
 
 ///|
 /// Query terms are constants or named variables.
+#derive(Eq, @debug.Debug)
 pub(all) enum QueryTerm {
   Constant(Value)
   Variable(String)
-} derive(Eq, @debug.Debug)
+}
 
 ///|
 pub extend QueryTerm with Eq::{equal, not_equal}
@@ -66,31 +69,34 @@ pub extend QueryTerm with @debug.Debug::{to_repr}
 
 ///|
 /// A predicate contains a name and zero or more terms.
+#derive(Eq)
 pub(all) struct Predicate {
   name : String
   terms : Array[QueryTerm]
-} derive(Eq)
+}
 
 ///|
 pub extend Predicate with Eq::{equal, not_equal}
 
 ///|
 /// A concrete fact contains no variables.
+#derive(Eq)
 pub(all) struct Fact {
   name : String
   values : Array[Value]
-} derive(Eq)
+}
 
 ///|
 pub extend Fact with Eq::{equal, not_equal}
 
 ///|
 /// Trusted block origins used by Datalog scope annotations.
+#derive(Eq, @debug.Debug)
 pub(all) enum TrustScope {
   TrustAuthority
   TrustPrevious
   TrustPublicKey(Bytes)
-} derive(Eq, @debug.Debug)
+}
 
 ///|
 pub extend TrustScope with Eq::{equal, not_equal}
@@ -100,38 +106,42 @@ pub extend TrustScope with @debug.Debug::{to_repr}
 
 ///|
 /// A positive Datalog rule with predicate-only body.
+#derive(Eq)
 pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-} derive(Eq)
+}
 
 ///|
 pub extend Rule with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) enum ExpressionValue {
   Literal(Value)
   Reference(String)
-} derive(Eq)
+}
 
 ///|
 pub extend ExpressionValue with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) enum UnaryOperator {
   Negate
   Parens
   Length
   TypeOf
   ExternalUnary(String)
-} derive(Eq)
+}
 
 ///|
 pub extend UnaryOperator with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) enum BinaryOperator {
   LessThan
   GreaterThan
@@ -163,95 +173,104 @@ pub(all) enum BinaryOperator {
   Get
   ExternalBinary(String)
   TryOr
-} derive(Eq)
+}
 
 ///|
 pub extend BinaryOperator with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) struct ExpressionClosure {
   parameters : Array[String]
   operations : Array[ExpressionOp]
-} derive(Eq)
+}
 
 ///|
 pub extend ExpressionClosure with Eq::{equal, not_equal}
 
 ///|
 /// Datalog expression bytecode, kept in its protocol-defined postfix order.
+#derive(Eq)
 pub(all) enum ExpressionOp {
   Value(ExpressionValue)
   Unary(UnaryOperator)
   Binary(BinaryOperator)
   Closure(ExpressionClosure)
-} derive(Eq)
+}
 
 ///|
 pub extend ExpressionOp with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) struct Condition {
   operations : Array[ExpressionOp]
-} derive(Eq)
+}
 
 ///|
 pub extend Condition with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-} derive(Eq)
+}
 
 ///|
 pub extend Query with Eq::{equal, not_equal}
 
 ///|
 /// How queries in a check group are combined.
+#derive(Eq)
 pub(all) enum CheckMode {
   Any
   All
   Reject
-} derive(Eq)
+}
 
 ///|
 pub extend CheckMode with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) struct Check {
   mode : CheckMode
   queries : Array[Query]
-} derive(Eq)
+}
 
 ///|
 pub extend Check with Eq::{equal, not_equal}
 
 ///|
+#derive(Eq)
 pub(all) enum PolicyKind {
   Allow
   Deny
-} derive(Eq)
+}
 
 ///|
 pub extend PolicyKind with Eq::{equal, not_equal}
 
 ///|
 /// Ordered policy query. The first matching policy determines the decision.
+#derive(Eq)
 pub(all) struct Policy {
   kind : PolicyKind
   queries : Array[Query]
-} derive(Eq)
+}
 
 ///|
 pub extend Policy with Eq::{equal, not_equal}
 
 ///|
 /// Authorization decision selected by the first matching policy.
+#derive(Eq)
 pub(all) struct AuthorizationResult {
   decision : PolicyKind
   policy_index : Int32
-} derive(Eq)
+}
 
 ///|
 pub extend AuthorizationResult with Eq::{equal, not_equal}
@@ -297,6 +316,7 @@ pub(all) struct ExternalFunctions {
 }
 
 ///|
+#derive(Eq)
 priv enum Lexeme {
   Word(String)
   VariableName(String)
@@ -313,7 +333,7 @@ priv enum Lexeme {
   Arrow
   Operator(String)
   End
-} derive(Eq)
+}
 
 ///|
 priv struct Lexer {

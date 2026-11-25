@@ -174,13 +174,15 @@ pub suberror TokenError {
 }
 
 // Types and methods
+#derive(Eq)
 pub(all) struct AuthorizationResult {
   decision : PolicyKind
   policy_index : Int32
-} derive(Eq)
+}
 pub fn AuthorizationResult::equal(Self, Self) -> Bool
 pub fn AuthorizationResult::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum BinaryOperator {
   LessThan
   GreaterThan
@@ -212,51 +214,57 @@ pub(all) enum BinaryOperator {
   Get
   ExternalBinary(String)
   TryOr
-} derive(Eq)
+}
 pub fn BinaryOperator::equal(Self, Self) -> Bool
 pub fn BinaryOperator::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) struct Check {
   mode : CheckMode
   queries : Array[Query]
-} derive(Eq)
+}
 pub fn Check::equal(Self, Self) -> Bool
 pub fn Check::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum CheckMode {
   Any
   All
   Reject
-} derive(Eq)
+}
 pub fn CheckMode::equal(Self, Self) -> Bool
 pub fn CheckMode::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) struct Condition {
   operations : Array[ExpressionOp]
-} derive(Eq)
+}
 pub fn Condition::equal(Self, Self) -> Bool
 pub fn Condition::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) struct ExpressionClosure {
   parameters : Array[String]
   operations : Array[ExpressionOp]
-} derive(Eq)
+}
 pub fn ExpressionClosure::equal(Self, Self) -> Bool
 pub fn ExpressionClosure::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum ExpressionOp {
   Value(ExpressionValue)
   Unary(UnaryOperator)
   Binary(BinaryOperator)
   Closure(ExpressionClosure)
-} derive(Eq)
+}
 pub fn ExpressionOp::equal(Self, Self) -> Bool
 pub fn ExpressionOp::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum ExpressionValue {
   Literal(Value)
   Reference(String)
-} derive(Eq)
+}
 pub fn ExpressionValue::equal(Self, Self) -> Bool
 pub fn ExpressionValue::not_equal(Self, Self) -> Bool
 
@@ -271,74 +279,85 @@ pub(all) struct ExternalSignature {
   encoded : Bytes
 }
 
+#derive(Eq)
 pub(all) struct Fact {
   name : String
   values : Array[Value]
-} derive(Eq)
+}
 pub fn Fact::equal(Self, Self) -> Bool
 pub fn Fact::not_equal(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum MapKey {
   IntegerKey(Int64)
   StringKey(String)
-} derive(Eq, @debug.Debug)
+}
 pub fn MapKey::equal(Self, Self) -> Bool
 pub fn MapKey::not_equal(Self, Self) -> Bool
 pub fn MapKey::to_repr(Self) -> @debug.Repr
 
+#derive(Eq)
 pub(all) struct Policy {
   kind : PolicyKind
   queries : Array[Query]
-} derive(Eq)
+}
 pub fn Policy::equal(Self, Self) -> Bool
 pub fn Policy::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum PolicyKind {
   Allow
   Deny
-} derive(Eq)
+}
 pub fn PolicyKind::equal(Self, Self) -> Bool
 pub fn PolicyKind::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) struct Predicate {
   name : String
   terms : Array[QueryTerm]
-} derive(Eq)
+}
 pub fn Predicate::equal(Self, Self) -> Bool
 pub fn Predicate::not_equal(Self, Self) -> Bool
 
 type PreparedToken
 pub fn PreparedToken::authorize(Self, Array[Fact], Array[Rule], Array[Check], Array[Policy], Int32, Int32, ExternalFunctions) -> AuthorizationResult raise AuthorizationError
 
+#derive(Eq)
 pub(all) struct Query {
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-} derive(Eq)
+}
 pub fn Query::equal(Self, Self) -> Bool
 pub fn Query::not_equal(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum QueryTerm {
   Constant(Value)
   Variable(String)
-} derive(Eq, @debug.Debug)
+}
 pub fn QueryTerm::equal(Self, Self) -> Bool
 pub fn QueryTerm::not_equal(Self, Self) -> Bool
 pub fn QueryTerm::to_repr(Self) -> @debug.Repr
 
+#derive(Eq)
 pub(all) struct Rule {
   head : Predicate
   body : Array[Predicate]
   conditions : Array[Condition]
   scopes : Array[TrustScope]
-} derive(Eq)
+}
 pub fn Rule::equal(Self, Self) -> Bool
 pub fn Rule::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum SignatureAlgorithm {
   Ed25519
   Secp256r1
-} derive(Eq)
+}
+pub fn SignatureAlgorithm::equal(Self, Self) -> Bool
+pub fn SignatureAlgorithm::not_equal(Self, Self) -> Bool
 
 pub(all) struct SigningKey {
   algorithm : SignatureAlgorithm
@@ -350,25 +369,28 @@ pub(all) struct ThirdPartyBlockContents {
   external_signature : ExternalSignature
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TrustScope {
   TrustAuthority
   TrustPrevious
   TrustPublicKey(Bytes)
-} derive(Eq, @debug.Debug)
+}
 pub fn TrustScope::equal(Self, Self) -> Bool
 pub fn TrustScope::not_equal(Self, Self) -> Bool
 pub fn TrustScope::to_repr(Self) -> @debug.Repr
 
+#derive(Eq)
 pub(all) enum UnaryOperator {
   Negate
   Parens
   Length
   TypeOf
   ExternalUnary(String)
-} derive(Eq)
+}
 pub fn UnaryOperator::equal(Self, Self) -> Bool
 pub fn UnaryOperator::not_equal(Self, Self) -> Bool
 
+#derive(@debug.Debug)
 pub(all) enum Value {
   Text(String)
   Number(Int64)
@@ -379,7 +401,7 @@ pub(all) enum Value {
   MapValue(Array[(MapKey, Value)])
   Boolean(Bool)
   Null
-} derive(@debug.Debug)
+}
 pub fn Value::equal(Self, Self) -> Bool
 pub fn Value::not_equal(Self, Self) -> Bool
 pub fn Value::to_repr(Self) -> @debug.Repr

@@ -133,11 +133,12 @@ let result = prepared.authorize(
 CI 编译器版本固定在 [`.moonbit-toolchain`](.moonbit-toolchain)。本地复现可运行以下命令。
 
 ```sh
-moon check
+moon fmt --check
+moon check --deny-warn
 moon build
-moon test
-moon test --target native
-moon test -f "official*"
+moon test --deny-warn
+moon test --target native --deny-warn
+moon test --deny-warn -f "official*"
 ```
 
 - 默认后端和 native 各通过 127 项测试。官方样例筛选通过 52 项，包含 38 个样例 ID 中的 50 个授权场景和 2 项独立签名验证。

@@ -1,8 +1,12 @@
 ///|
+#derive(Eq)
 pub(all) enum SignatureAlgorithm {
   Ed25519
   Secp256r1
-} derive(Eq)
+}
+
+///|
+pub extend SignatureAlgorithm with Eq::{equal, not_equal}
 
 ///|
 pub(all) struct SigningKey {

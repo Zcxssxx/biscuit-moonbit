@@ -2,12 +2,14 @@
 
 ## 环境
 
-CI 按 `.moonbit-toolchain` 固定 MoonBit 编译器；先用 `moon version --all` 记录本机版本。较新工具链会将旧 `derive(...)` 自动格式化为新语法，提交前检查差异，避免意外破坏固定版本兼容性。
+CI 按 `.moonbit-toolchain` 固定 MoonBit 编译器。先用 `moon version --all` 核对本机版本。格式检查、接口生成及严格编译均使用同一固定版本。
 
 ```text
 moon update
-moon check
-moon test
+moon fmt --check
+moon check --deny-warn
+moon test --deny-warn
+moon test --target native --deny-warn
 moon build
 moon run examples/maintenance
 ```

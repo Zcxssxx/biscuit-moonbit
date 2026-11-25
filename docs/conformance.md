@@ -199,3 +199,7 @@ Bidirectional algorithm matrix: 8/8 passed
 ## 2026-11-25 多规则授权事实索引
 
 本机执行 `moon check`、`moon build`、`moon test`、`moon test -f 'official*'` 和 `moon run examples/maintenance`。全量 127/127，官方筛选 52/52，工厂日志示例 10/10。新增回归检验同值不同来源的派生事实、同轮后续规则的可见性、事实数量上限与迭代上限。对照基准见 [授权基准](benchmarks.md#多规则与多检查的事实索引)。
+
+## 固定工具链的严格验收检查
+
+本机使用 `moonc v0.10.20+65efd5b93`，实际通过 `moon fmt --check`、`moon check --deny-warn`、`moon build` 和 `moon info`。`moon test --deny-warn` 与 `moon test --target native --deny-warn` 各通过 127/127，`moon test --deny-warn -f 'official*'` 通过 52/52。工厂日志示例通过 10/10。CI 也运行上述命令，并校验生成接口与提交内容一致。 [CI 运行记录](https://github.com/Zcxssxx/biscuit-moonbit/actions/workflows/ci.yml)
